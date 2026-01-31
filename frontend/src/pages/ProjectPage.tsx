@@ -3,7 +3,12 @@ import { useParams } from "react-router-dom";
 import { parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
-import { EXPLORER_URL, STAGE_LABELS, USDC_ADDRESS, getExplorerUrl } from "../config";
+import {
+  EXPLORER_URL,
+  STAGE_LABELS,
+  USDC_ADDRESS,
+  getExplorerUrl,
+} from "../config";
 import { useWallet } from "../context/WalletContext";
 import {
   fetchProjectInfo,
@@ -28,7 +33,11 @@ const markErrorHandled = (error: unknown) => {
 };
 
 const wasErrorHandled = (error: unknown) =>
-  Boolean(error && typeof error === "object" && handledToastErrors.has(error as object));
+  Boolean(
+    error &&
+    typeof error === "object" &&
+    handledToastErrors.has(error as object),
+  );
 
 const resolveErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -88,9 +97,13 @@ const MetricCard = ({ label, value, sub, icon: Icon }: MetricCardProps) => {
           <Icon className="h-5 w-5" aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{label}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">
+            {label}
+          </p>
           <div className="mt-1 text-sm text-sky-100">{value}</div>
-          {sub ? <div className="mt-1 text-[10px] text-stone-400">{sub}</div> : null}
+          {sub ? (
+            <div className="mt-1 text-[10px] text-stone-400">{sub}</div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -98,7 +111,13 @@ const MetricCard = ({ label, value, sub, icon: Icon }: MetricCardProps) => {
 };
 
 const IconUsers = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    {...props}
+  >
     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
     <circle cx="9" cy="7" r="4" />
     <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
@@ -107,7 +126,13 @@ const IconUsers = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 const IconFee = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    {...props}
+  >
     <path d="M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0z" />
     <path d="M8 16l8-8" />
     <path d="M9 9h.01" />
@@ -116,14 +141,26 @@ const IconFee = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 const IconProfit = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    {...props}
+  >
     <path d="M3 3v18h18" />
     <path d="M7 14l4-4 3 3 5-7" />
   </svg>
 );
 
 const IconClaim = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    {...props}
+  >
     <path d="M21 6H3v12h18V6z" />
     <path d="M7 12l3 3 7-7" />
   </svg>
@@ -141,8 +178,12 @@ const ProjectPage = () => {
   const [profitAmount, setProfitAmount] = useState("0");
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [explorerBaseUrl, setExplorerBaseUrl] = useState(() => sanitizeExplorerUrl(getExplorerUrl()));
-  const profitsOpen = project ? project.totalRaised >= project.minimumRaise : false;
+  const [explorerBaseUrl, setExplorerBaseUrl] = useState(() =>
+    sanitizeExplorerUrl(getExplorerUrl()),
+  );
+  const profitsOpen = project
+    ? project.totalRaised >= project.minimumRaise
+    : false;
 
   const countdown = useMemo(() => {
     if (!project) return "";
@@ -167,7 +208,9 @@ const ProjectPage = () => {
       try {
         const network = await provider.getNetwork();
         if (!cancelled) {
-          setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl(network.chainId)));
+          setExplorerBaseUrl(
+            sanitizeExplorerUrl(getExplorerUrl(network.chainId)),
+          );
         }
       } catch (error) {
         console.error("Failed to determine explorer URL", error);
@@ -273,12 +316,17 @@ const ProjectPage = () => {
       const value = parseUnits(amount || "0", 6);
       const usdc = getUsdc(signer);
       const owner = await signer.getAddress();
+      const balance: bigint = await usdc.balanceOf(owner);
+      if (balance < value) {
+        toast.error(
+          `Insufficient USDC balance. You have ${formatUsdc(balance)} but need ${formatUsdc(value)}`,
+        );
+        return;
+      }
       const allowance: bigint = await usdc.allowance(owner, project.address);
       if (allowance < value) {
         await toast.promise(
-          usdc
-            .approve(project.address, value)
-            .then((tx) => tx.wait()),
+          usdc.approve(project.address, value).then((tx) => tx.wait()),
           {
             loading: "Approving USDC...",
             success: "USDC approved",
@@ -286,15 +334,13 @@ const ProjectPage = () => {
               markErrorHandled(error);
               return `Approval failed: ${getRevertMessage(error)}`;
             },
-          }
+          },
         );
       }
 
       const vault = getVault(project.address, signer);
       await toast.promise(
-        vault
-          .deposit(value)
-          .then((tx) => tx.wait()),
+        vault.deposit(value).then((tx) => tx.wait()),
         {
           loading: "Depositing...",
           success: "Deposit confirmed",
@@ -302,7 +348,7 @@ const ProjectPage = () => {
             markErrorHandled(error);
             return `Deposit failed: ${getRevertMessage(error)}`;
           },
-        }
+        },
       );
       await reloadProjectData();
     } catch (error) {
@@ -320,15 +366,15 @@ const ProjectPage = () => {
       return;
     }
     if (!profitsOpen) {
-      toast.error("Project must reach the minimum raise before claiming profits");
+      toast.error(
+        "Project must reach the minimum raise before claiming profits",
+      );
       return;
     }
     try {
       const vault = getVault(project.address, signer);
       await toast.promise(
-        vault
-          .claimProfit()
-          .then((tx) => tx.wait()),
+        vault.claimProfit().then((tx) => tx.wait()),
         {
           loading: "Claiming profits...",
           success: "Profits claimed",
@@ -336,7 +382,7 @@ const ProjectPage = () => {
             markErrorHandled(error);
             return `Claim failed: ${getRevertMessage(error)}`;
           },
-        }
+        },
       );
       await reloadProjectData();
     } catch (error) {
@@ -356,9 +402,7 @@ const ProjectPage = () => {
     try {
       const vault = getVault(project.address, signer);
       await toast.promise(
-        vault
-          .refund()
-          .then((tx) => tx.wait()),
+        vault.refund().then((tx) => tx.wait()),
         {
           loading: "Processing refund...",
           success: "Refund complete",
@@ -366,7 +410,7 @@ const ProjectPage = () => {
             markErrorHandled(error);
             return `Refund failed: ${getRevertMessage(error)}`;
           },
-        }
+        },
       );
       await reloadProjectData();
     } catch (error) {
@@ -390,9 +434,7 @@ const ProjectPage = () => {
     try {
       const vault = getVault(project.address, signer);
       await toast.promise(
-        vault
-          .withdrawRaisedFunds()
-          .then((tx) => tx.wait()),
+        vault.withdrawRaisedFunds().then((tx) => tx.wait()),
         {
           loading: "Withdrawing raised funds...",
           success: "Raised funds withdrawn",
@@ -400,7 +442,7 @@ const ProjectPage = () => {
             markErrorHandled(error);
             return `Withdraw failed: ${getRevertMessage(error)}`;
           },
-        }
+        },
       );
       await reloadProjectData();
     } catch (error) {
@@ -429,7 +471,9 @@ const ProjectPage = () => {
         return;
       }
       if (!profitsOpen) {
-        toast.error("Project must reach the minimum raise before profit deposits");
+        toast.error(
+          "Project must reach the minimum raise before profit deposits",
+        );
         return;
       }
 
@@ -438,9 +482,7 @@ const ProjectPage = () => {
       const allowance: bigint = await usdc.allowance(owner, project.address);
       if (allowance < value) {
         await toast.promise(
-          usdc
-            .approve(project.address, value)
-            .then((tx) => tx.wait()),
+          usdc.approve(project.address, value).then((tx) => tx.wait()),
           {
             loading: "Approving USDC...",
             success: "USDC approved",
@@ -448,15 +490,13 @@ const ProjectPage = () => {
               markErrorHandled(error);
               return `Approval failed: ${getRevertMessage(error)}`;
             },
-          }
+          },
         );
       }
 
       const vault = getVault(project.address, signer);
       await toast.promise(
-        vault
-          .depositProfit(value)
-          .then((tx) => tx.wait()),
+        vault.depositProfit(value).then((tx) => tx.wait()),
         {
           loading: "Depositing profit...",
           success: "Profit deposited",
@@ -464,7 +504,7 @@ const ProjectPage = () => {
             markErrorHandled(error);
             return `Profit deposit failed: ${getRevertMessage(error)}`;
           },
-        }
+        },
       );
       await reloadProjectData();
     } catch (error) {
@@ -485,15 +525,20 @@ const ProjectPage = () => {
 
   const claimableAmount = position?.pending ?? 0n;
   const canClaim = profitsOpen && claimableAmount > 0n;
-  const showRefund = Boolean(position && project.stage === 2 && position.shares > 0n);
+  const showRefund = Boolean(
+    position && project.stage === 2 && position.shares > 0n,
+  );
 
   const withdrawPrincipal = project.withdrawable;
   const withdrawFees = project.withdrawableFees ?? project.accruedRaiseFees;
 
   const raisedBps =
-    project.minimumRaise > 0n ? (project.totalRaised * 10_000n) / project.minimumRaise : 0n;
+    project.minimumRaise > 0n
+      ? (project.totalRaised * 10_000n) / project.minimumRaise
+      : 0n;
   const raisedPct = Math.min(100, Math.max(0, Number(raisedBps) / 100));
-  const creatorFeesPaid = project.totalRaiseFeesPaid + project.totalProfitFeesPaid;
+  const creatorFeesPaid =
+    project.totalRaiseFeesPaid + project.totalProfitFeesPaid;
   const withdrawnBySpv =
     project.withdrawnTotal > project.totalRaiseFeesPaid
       ? project.withdrawnTotal - project.totalRaiseFeesPaid
@@ -511,23 +556,32 @@ const ProjectPage = () => {
         <div className="card-frame rounded-lg p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-	              <p className="text-[11px] text-stone-400">Project</p>
-	              <h1 className="text-lg text-sky-200">{project.name}</h1>
+              <p className="text-[11px] text-stone-400">Project</p>
+              <h1 className="text-lg text-sky-200">{project.name}</h1>
             </div>
             <div className="text-right">
               <p className="text-[10px] uppercase text-stone-400">Status</p>
-              <p className="text-sm text-grass">{STAGE_LABELS[project.stage]}</p>
-              <p className="text-[10px] text-stone-400">Countdown: {countdown}</p>
+              <p className="text-sm text-grass">
+                {STAGE_LABELS[project.stage]}
+              </p>
+              <p className="text-[10px] text-stone-400">
+                Countdown: {countdown}
+              </p>
             </div>
           </div>
 
           <div className="mt-4 rounded border-4 border-dirt bg-night/40 p-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">Funding Progress</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">
+                Funding Progress
+              </p>
             </div>
             <div className="mt-1 flex items-center justify-between text-[10px] text-stone-400">
               <p>
-                Raised: <span className="text-sky-100">{formatUsdc(project.totalRaised)} USDC</span>
+                Raised:{" "}
+                <span className="text-sky-100">
+                  {formatUsdc(project.totalRaised)} USDC
+                </span>
               </p>
               <p>{raisedPct.toFixed(1)}% funded</p>
             </div>
@@ -539,14 +593,23 @@ const ProjectPage = () => {
               aria-valuemax={100}
               aria-valuenow={Math.round(raisedPct)}
             >
-              <div className="h-full rounded-sm bg-grass" style={{ width: `${raisedPct}%` }} />
+              <div
+                className="h-full rounded-sm bg-grass"
+                style={{ width: `${raisedPct}%` }}
+              />
             </div>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[10px] text-stone-400">
               <p>
-                Withdrawn: <span className="text-sky-100">{formatUsdc(withdrawnBySpv)} USDC</span>
+                Withdrawn:{" "}
+                <span className="text-sky-100">
+                  {formatUsdc(withdrawnBySpv)} USDC
+                </span>
               </p>
               <p>
-                Minimum: <span className="text-sky-100">{formatUsdc(project.minimumRaise)} USDC</span>
+                Minimum:{" "}
+                <span className="text-sky-100">
+                  {formatUsdc(project.minimumRaise)} USDC
+                </span>
               </p>
             </div>
           </div>
@@ -555,12 +618,20 @@ const ProjectPage = () => {
             <MetricCard
               label="Raise Fee"
               icon={IconFee}
-              value={<span className="text-[12px] text-stone-300">{formatBpsAsPercent(project.raiseFeeBps)}</span>}
+              value={
+                <span className="text-[12px] text-stone-300">
+                  {formatBpsAsPercent(project.raiseFeeBps)}
+                </span>
+              }
             />
             <MetricCard
               label="Revenue Fee"
               icon={IconFee}
-              value={<span className="text-[12px] text-stone-300">{formatBpsAsPercent(project.profitFeeBps)}</span>}
+              value={
+                <span className="text-[12px] text-stone-300">
+                  {formatBpsAsPercent(project.profitFeeBps)}
+                </span>
+              }
             />
             <MetricCard
               label="Supporters"
@@ -578,14 +649,20 @@ const ProjectPage = () => {
             <MetricCard
               label="Lifetime Profit"
               icon={IconProfit}
-              value={<span className="text-[12px] text-stone-300">{formatUsdc(project.totalProfit)} USDC</span>}
+              value={
+                <span className="text-[12px] text-stone-300">
+                  {formatUsdc(project.totalProfit)} USDC
+                </span>
+              }
             />
             <MetricCard
               label="Profits Claimed"
               icon={IconClaim}
               value={
                 <span className="text-[12px] text-stone-300">
-                  {totalClaimed === null ? "—" : `${formatUsdc(totalClaimed)} USDC`}
+                  {totalClaimed === null
+                    ? "—"
+                    : `${formatUsdc(totalClaimed)} USDC`}
                 </span>
               }
             />
@@ -617,7 +694,10 @@ const ProjectPage = () => {
                       outerRadius={56}
                     >
                       {project.companyNames.map((_, idx) => (
-                        <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                        <Cell
+                          key={idx}
+                          fill={PIE_COLORS[idx % PIE_COLORS.length]}
+                        />
                       ))}
                     </Pie>
                   </PieChart>
@@ -633,11 +713,15 @@ const ProjectPage = () => {
                     <div className="flex items-center gap-2">
                       <span
                         className="inline-block h-2 w-2 rounded-sm"
-                        style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}
+                        style={{
+                          backgroundColor: PIE_COLORS[idx % PIE_COLORS.length],
+                        }}
                       />
                       <p className="text-stone-100">{name}</p>
                     </div>
-                    <p className="text-stone-400">{project.companyWeights[idx]}%</p>
+                    <p className="text-stone-400">
+                      {project.companyWeights[idx]}%
+                    </p>
                   </div>
                 ))}
               </div>
@@ -709,7 +793,10 @@ const ProjectPage = () => {
             <div className="relative mt-1 h-1 rounded-full bg-stone-800/70">
               <div
                 className="absolute top-0 h-1 rounded-full bg-sky-400 transition-all duration-200"
-                style={{ width: `${sliderWidth}%`, left: `${sliderWidth * activeTabIndex}%` }}
+                style={{
+                  width: `${sliderWidth}%`,
+                  left: `${sliderWidth * activeTabIndex}%`,
+                }}
               />
             </div>
           </div>
@@ -736,16 +823,20 @@ const ProjectPage = () => {
               <div className="rounded border-4 border-dirt bg-night/40 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-[10px] text-stone-400">Claimable profit</p>
+                    <p className="text-[10px] text-stone-400">
+                      Claimable profit
+                    </p>
                     <p className="text-[11px] text-sky-100">
-                      {account ? `${formatUsdc(claimableAmount)} USDC` : "Connect wallet to view"}
+                      {account
+                        ? `${formatUsdc(claimableAmount)} USDC`
+                        : "Connect wallet to view"}
                     </p>
                   </div>
-                <button
-                  onClick={handleClaim}
-                  disabled={!canClaim}
-                  className="button-blocky rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
-                >
+                  <button
+                    onClick={handleClaim}
+                    disabled={!canClaim}
+                    className="button-blocky rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
+                  >
                     Claim
                   </button>
                 </div>
@@ -761,9 +852,9 @@ const ProjectPage = () => {
                     Refund (failed only)
                   </button>
                   <p className="mt-2 text-[10px] text-stone-500">
-                    If the minimum raise is not met by the deadline, the project moves to Failed. In
-                    that case, the SPV is not progressed and you can claim back your full USDC
-                    contribution here.
+                    If the minimum raise is not met by the deadline, the project
+                    moves to Failed. In that case, the SPV is not progressed and
+                    you can claim back your full USDC contribution here.
                   </p>
                 </div>
               )}
@@ -792,7 +883,9 @@ const ProjectPage = () => {
               </div>
 
               <div className="rounded border-4 border-dirt bg-night/40 p-3">
-                <p className="mb-2 text-[10px] text-stone-400">Deposit Profit</p>
+                <p className="mb-2 text-[10px] text-stone-400">
+                  Deposit Profit
+                </p>
                 <input
                   className="input-blocky mb-3 w-full rounded px-3 py-2 text-xs"
                   type="number"
@@ -817,7 +910,9 @@ const ProjectPage = () => {
             <div>
               <p className="text-[10px] text-stone-400">Wallet</p>
               {account ? (
-                <p className="text-[11px] text-sky-100">{shortAddress(account)}</p>
+                <p className="text-[11px] text-sky-100">
+                  {shortAddress(account)}
+                </p>
               ) : (
                 <p className="text-[10px] text-stone-500">Not connected</p>
               )}
@@ -838,19 +933,27 @@ const ProjectPage = () => {
               <div className="space-y-2 text-[11px]">
                 <div className="flex justify-between">
                   <span className="text-stone-300">USDC</span>
-                  <span className="text-sky-100">{formatUsdc(position.usdcBalance)}</span>
+                  <span className="text-sky-100">
+                    {formatUsdc(position.usdcBalance)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-stone-300">Share balance</span>
-                  <span className="text-sky-100">{formatUsdc(position.shareBalance)}</span>
+                  <span className="text-sky-100">
+                    {formatUsdc(position.shareBalance)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-stone-300">Claimable profit</span>
-                  <span className="text-sky-100">{formatUsdc(position.pending)}</span>
+                  <span className="text-sky-100">
+                    {formatUsdc(position.pending)}
+                  </span>
                 </div>
               </div>
             ) : (
-              <p className="text-[10px] text-stone-500">Connect a wallet to view balances.</p>
+              <p className="text-[10px] text-stone-500">
+                Connect a wallet to view balances.
+              </p>
             )}
           </div>
         </div>
