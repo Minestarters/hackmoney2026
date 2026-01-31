@@ -1,6 +1,6 @@
 import { Contract } from "ethers";
 import type { BrowserProvider, JsonRpcProvider, Signer } from "ethers";
-import { FACTORY_ADDRESS, USDC_ADDRESS } from "../config";
+import { FACTORY_ADDRESS, START_BLOCK, USDC_ADDRESS } from "../config";
 import {
   basketVaultAbi,
   erc20Abi,
@@ -103,33 +103,39 @@ export const fetchProjectInfo = async (
 
 const normalizeAddress = (address: string) => address.trim().toLowerCase();
 
+// Generic helper to fetch events in chunks
+const fetchEventsInChunks = async (
+  vault: Contract,
+  eventName: string,
+  provider: BrowserProvider | JsonRpcProvider,
+  chunkSize = 10000
+) => {
+  const fromBlock = START_BLOCK;
+  const currentBlock = await provider.getBlockNumber();
+  const allEvents = [];
+
+  for (let start = fromBlock; start <= currentBlock; start += chunkSize) {
+    const end = Math.min(start + chunkSize - 1, currentBlock);
+    const events = await vault.queryFilter(eventName, start, end);
+    allEvents.push(...events);
+  }
+
+  return allEvents;
+};
+
 export const fetchSupporterCount = async (
   projectAddress: string,
   provider: BrowserProvider | JsonRpcProvider
 ): Promise<number> => {
   const vault = getVault(projectAddress, provider);
+  const events = await fetchEventsInChunks(vault, "Deposited", provider);
 
-  let fromBlock = 0;
-  if (FACTORY_ADDRESS) {
-    try {
-      const factory = getFactory(provider);
-      const createdEvents = await factory.queryFilter("ProjectCreated", 0, "latest");
-      const match = createdEvents.find((event) => {
-        const vaultAddress = (event as any)?.args?.vault as string | undefined;
-        return vaultAddress ? normalizeAddress(vaultAddress) === normalizeAddress(projectAddress) : false;
-      });
-      if (match?.blockNumber != null) fromBlock = match.blockNumber;
-    } catch {
-      // ignore; fallback to scanning from block 0
-    }
-  }
-
-  const depositEvents = await vault.queryFilter("Deposited", fromBlock, "latest");
   const uniqueDepositors = new Set<string>();
-  for (const event of depositEvents) {
+  for (const event of events) {
     const user = (event as any)?.args?.user as string | undefined;
     if (user) uniqueDepositors.add(normalizeAddress(user));
   }
+
   return uniqueDepositors.size;
 };
 
@@ -138,24 +144,9 @@ export const fetchTotalClaimed = async (
   provider: BrowserProvider | JsonRpcProvider
 ): Promise<bigint> => {
   const vault = getVault(projectAddress, provider);
+  const events = await fetchEventsInChunks(vault, "ProfitClaimed", provider);
 
-  let fromBlock = 0;
-  if (FACTORY_ADDRESS) {
-    try {
-      const factory = getFactory(provider);
-      const createdEvents = await factory.queryFilter("ProjectCreated", 0, "latest");
-      const match = createdEvents.find((event) => {
-        const vaultAddress = (event as any)?.args?.vault as string | undefined;
-        return vaultAddress ? normalizeAddress(vaultAddress) === normalizeAddress(projectAddress) : false;
-      });
-      if (match?.blockNumber != null) fromBlock = match.blockNumber;
-    } catch {
-      // ignore; fallback to scanning from block 0
-    }
-  }
-
-  const claimedEvents = await vault.queryFilter("ProfitClaimed", fromBlock, "latest");
-  return claimedEvents.reduce((sum, event) => {
+  return events.reduce((sum, event) => {
     const amount = (event as any)?.args?.amount as bigint | undefined;
     return amount != null ? sum + BigInt(amount) : sum;
   }, 0n);

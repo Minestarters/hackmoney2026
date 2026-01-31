@@ -2,6 +2,7 @@ export const FACTORY_ADDRESS = import.meta.env.VITE_FACTORY_ADDRESS || "";
 export const USDC_ADDRESS = import.meta.env.VITE_USDC_ADDRESS || "";
 export const RPC_URL = import.meta.env.VITE_RPC_URL || "http://localhost:8545";
 export const EXPLORER_URL = import.meta.env.VITE_EXPLORER_URL || "";
+export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
 
 const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",
