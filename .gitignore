@@ -1,0 +1,32 @@
+# Dependency directories
+node_modules/
+
+# Hardhat files
+artifacts/
+cache/
+typechain-types/
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+
+# Environment variables
+.env
+*.env
+
+# IDE / System files
+.DS_Store
+.idea/
+
+# Coverage files
+coverage/
+coverage.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build files
+dist/
+build/

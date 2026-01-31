@@ -12,8 +12,8 @@
     "compile": "forge build",
     "test": "forge test",
     "test:verbose": "forge test -vvv",
-    "deploy:usdc": "source .env && forge script scripts/DeployUSDC.s.sol --rpc-url arc-testnet --broadcast",
-    "deploy:factory": "source .env && forge script scripts/DeployFactory.s.sol --rpc-url arc-testnet --broadcast",
+    "deploy:usdc": "source .env && forge script scripts/DeployUSDC.s.sol --rpc-url arc-testnet --broadcast --verify --verifier blockscout --verifier-url 'https://testnet.arcscan.app/api/'",
+    "deploy:factory": "source .env && forge script scripts/DeployFactory.s.sol --rpc-url arc-testnet --broadcast --verify --verifier blockscout --verifier-url 'https://testnet.arcscan.app/api/'",
     "deploy:usdc:dry": "source .env && forge script scripts/DeployUSDC.s.sol --rpc-url arc-testnet",
     "deploy:factory:dry": "source .env && forge script scripts/DeployFactory.s.sol --rpc-url arc-testnet",
     "clean": "forge clean"

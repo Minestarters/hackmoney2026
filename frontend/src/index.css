@@ -1,0 +1,56 @@
+@import "@fontsource/press-start-2p";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Press Start 2P", system-ui, sans-serif;
+  background-color: #0f1115;
+  color: #e5e7eb;
+}
+
+.pixel-heading {
+  font-family: "Press Start 2P", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, #0c2d3a 0%, #0f1115 40%, #0a241f 100%);
+  background-size: 24px 24px, 24px 24px, cover;
+}
+
+.pixel-border {
+  box-shadow:
+    0 0 0 3px #1f1f1f,
+    0 0 0 6px #5ebd3e,
+    0 10px 0 6px rgba(0, 0, 0, 0.35);
+}
+
+.card-frame {
+  border: 4px solid #836953;
+  background: rgba(20, 24, 28, 0.9);
+  box-shadow: inset 0 0 0 2px #9e9e9e, 0 12px 0 0 rgba(0, 0, 0, 0.3);
+}
+
+.button-blocky {
+  border: 3px solid #5ebd3e;
+  background: linear-gradient(180deg, #6ecff6 0%, #3ea2c2 100%);
+  color: #0d1d0d;
+  box-shadow: 0 6px 0 #1b5b3c;
+}
+
+.button-blocky:active {
+  transform: translateY(2px);
+  box-shadow: 0 4px 0 #1b5b3c;
+}
+
+.input-blocky {
+  border: 3px solid #9e9e9e;
+  background: #14181c;
+  color: #f3f4f6;
+  box-shadow: inset 0 0 0 2px #3b3f46;
+}

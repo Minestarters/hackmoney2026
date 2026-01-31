@@ -5,10 +5,19 @@
   "description": "",
   "main": "index.js",
   "workspaces": [
-    "contracts"
+    "contracts",
+    "frontend"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "contracts:compile": "yarn workspace @hackmoney2026/contracts compile",
+    "contracts:test": "yarn workspace @hackmoney2026/contracts test",
+    "contracts:deploy:usdc": "yarn workspace @hackmoney2026/contracts deploy:usdc",
+    "contracts:deploy:factory": "yarn workspace @hackmoney2026/contracts deploy:factory",
+    "contracts:clean": "yarn workspace @hackmoney2026/contracts clean",
+    "frontend:dev": "yarn workspace @hackmoney2026/frontend dev",
+    "frontend:build": "yarn workspace @hackmoney2026/frontend build",
+    "frontend:preview": "yarn workspace @hackmoney2026/frontend preview",
+    "frontend:lint": "yarn workspace @hackmoney2026/frontend lint"
   },
   "keywords": [],
   "author": "",
