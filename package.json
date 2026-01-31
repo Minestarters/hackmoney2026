@@ -4,6 +4,7 @@
   "private": true,
   "description": "",
   "main": "index.js",
+  "packageManager": "yarn@1.22.22",
   "workspaces": [
     "contracts",
     "frontend"
