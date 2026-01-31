@@ -42,6 +42,28 @@ Make sure you have the following installed:
 - **Yarn** 1.22.22 (managed via Volta)
 - **Foundry** (for smart contract development)
 
+#### Installing Foundry
+
+Foundry is the official Ethereum development toolkit. To install it:
+
+1. **Install Foundryup** (the Foundry toolchain installer):
+
+   ```bash
+   curl -L https://foundry.paradigm.xyz | bash
+   ```
+
+2. **Run Foundryup** to install Foundry:
+
+   ```bash
+   foundryup
+   ```
+
+   This will install `forge`, `cast`, `anvil`, and `chisel`.
+
+> **Note for Windows users:** You'll need to use [Git BASH](https://gitforwindows.org/) or [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) as Foundryup doesn't support PowerShell or Command Prompt.
+
+For more installation options (building from source, Docker, etc.), visit the [official Foundry installation guide](https://getfoundry.sh/introduction/installation/).
+
 ### Installation
 
 1. **Clone the repository:**
