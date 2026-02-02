@@ -74,7 +74,6 @@ import { useWallet } from "../context/WalletContext";
 import { getVault, getUsdc } from "../lib/contracts";
 import { formatUsdc } from "../lib/format";
 import type { ProjectInfo } from "../types";
-import { ArcTestnet } from "@circle-fin/bridge-kit/chains";
 
 export type BridgeMode = "before" | "after";
 

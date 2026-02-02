@@ -175,7 +175,6 @@ const ProjectPage = () => {
   const [supportCount, setSupportCount] = useState<number | null>(null);
   const [totalClaimed, setTotalClaimed] = useState<bigint | null>(null);
   const [activeTab, setActiveTab] = useState<"investor" | "spv">("investor");
-  const [profitAmount, setProfitAmount] = useState("0");
   const [loading, setLoading] = useState(false);
   const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
@@ -385,7 +384,6 @@ const ProjectPage = () => {
 
   const handleAddProfitComplete = async () => {
     setIsAddProfitModalOpen(false);
-    setProfitAmount("0");
     await reloadProjectData();
   };
 
