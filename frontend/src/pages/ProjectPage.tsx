@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { parseUnits } from "ethers";
+import { formatUnits, parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
 import BridgeKitModal from "../components/BridgeKitModal";
@@ -178,6 +178,9 @@ const ProjectPage = () => {
   const [profitAmount, setProfitAmount] = useState("0");
   const [loading, setLoading] = useState(false);
   const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
+  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [isAddProfitModalOpen, setIsAddProfitModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [explorerBaseUrl, setExplorerBaseUrl] = useState(() =>
     sanitizeExplorerUrl(getExplorerUrl()),
@@ -304,38 +307,31 @@ const ProjectPage = () => {
     setIsBridgeModalOpen(false);
   };
 
-  const handleClaim = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
-      return;
-    }
+  const handleClaimComplete = async () => {
+    await reloadProjectData();
+    setIsClaimModalOpen(false);
+  };
+
+  const handleClaimContract = async () => {
+    if (!project || !signer) return;
     if (!profitsOpen) {
       toast.error(
         "Project must reach the minimum raise before claiming profits",
       );
-      return;
+      throw new Error("Profits not open");
     }
-    try {
-      const vault = getVault(project.address, signer);
-      await toast.promise(
-        vault.claimProfit().then((tx) => tx.wait()),
-        {
-          loading: "Claiming profits...",
-          success: "Profits claimed",
-          error: (error) => {
-            markErrorHandled(error);
-            return `Claim failed: ${getRevertMessage(error)}`;
-          },
+    const vault = getVault(project.address, signer);
+    await toast.promise(
+      vault.claimProfit().then((tx) => tx.wait()),
+      {
+        loading: "Claiming profits...",
+        success: "Profits claimed",
+        error: (error) => {
+          markErrorHandled(error);
+          return `Claim failed: ${getRevertMessage(error)}`;
         },
-      );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Claim failed: ${getRevertMessage(error)}`);
-      }
-    }
+      },
+    );
   };
 
   const handleRefund = async () => {
@@ -366,98 +362,81 @@ const ProjectPage = () => {
     }
   };
 
-  const handleWithdrawRaised = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
-      return;
-    }
-    if (!canWithdrawRaised) {
-      toast.error("No withdrawable funds available");
-      return;
-    }
-    try {
-      const vault = getVault(project.address, signer);
-      await toast.promise(
-        vault.withdrawRaisedFunds().then((tx) => tx.wait()),
-        {
-          loading: "Withdrawing raised funds...",
-          success: "Raised funds withdrawn",
-          error: (error) => {
-            markErrorHandled(error);
-            return `Withdraw failed: ${getRevertMessage(error)}`;
-          },
-        },
-      );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Withdraw failed: ${getRevertMessage(error)}`);
-      }
-    }
+  const handleWithdrawComplete = async () => {
+    await reloadProjectData();
+    setIsWithdrawModalOpen(false);
   };
 
-  const handleDepositProfit = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
-      return;
-    }
+  const handleWithdrawContract = async () => {
+    if (!project || !signer) return;
+    const vault = getVault(project.address, signer);
+    await toast.promise(
+      vault.withdrawRaisedFunds().then((tx) => tx.wait()),
+      {
+        loading: "Withdrawing raised funds...",
+        success: "Raised funds withdrawn",
+        error: (error) => {
+          markErrorHandled(error);
+          return `Withdraw failed: ${getRevertMessage(error)}`;
+        },
+      },
+    );
+  };
+
+  const handleAddProfitComplete = async () => {
+    setIsAddProfitModalOpen(false);
+    setProfitAmount("0");
+    await reloadProjectData();
+  };
+
+  const handleAddProfitContract = async (amount: string) => {
+    if (!project || !signer) return;
     if (!USDC_ADDRESS) {
       toast.error("Set VITE_USDC_ADDRESS for deposits");
-      return;
+      throw new Error("USDC address not set");
     }
 
-    try {
-      const value = parseUnits(profitAmount || "0", 6);
-      if (value <= 0n) {
-        toast.error("Enter a profit amount greater than zero");
-        return;
-      }
-      if (!profitsOpen) {
-        toast.error(
-          "Project must reach the minimum raise before profit deposits",
-        );
-        return;
-      }
+    const value = parseUnits(amount || "0", 6);
+    if (value <= 0n) {
+      toast.error("Enter a profit amount greater than zero");
+      throw new Error("Invalid amount");
+    }
+    if (!profitsOpen) {
+      toast.error(
+        "Project must reach the minimum raise before profit deposits",
+      );
+      throw new Error("Profits not open");
+    }
 
-      const usdc = getUsdc(signer);
-      const owner = await signer.getAddress();
-      const allowance: bigint = await usdc.allowance(owner, project.address);
-      if (allowance < value) {
-        await toast.promise(
-          usdc.approve(project.address, value).then((tx) => tx.wait()),
-          {
-            loading: "Approving USDC...",
-            success: "USDC approved",
-            error: (error) => {
-              markErrorHandled(error);
-              return `Approval failed: ${getRevertMessage(error)}`;
-            },
-          },
-        );
-      }
-
-      const vault = getVault(project.address, signer);
+    const usdc = getUsdc(signer);
+    const owner = await signer.getAddress();
+    const allowance: bigint = await usdc.allowance(owner, project.address);
+    if (allowance < value) {
       await toast.promise(
-        vault.depositProfit(value).then((tx) => tx.wait()),
+        usdc.approve(project.address, value).then((tx) => tx.wait()),
         {
-          loading: "Depositing profit...",
-          success: "Profit deposited",
+          loading: "Approving USDC...",
+          success: "USDC approved",
           error: (error) => {
             markErrorHandled(error);
-            return `Profit deposit failed: ${getRevertMessage(error)}`;
+            return `Approval failed: ${getRevertMessage(error)}`;
           },
         },
       );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Profit deposit failed: ${getRevertMessage(error)}`);
-      }
     }
+
+    const vault = getVault(project.address, signer);
+    await toast.promise(
+      vault.depositProfit(value).then((tx) => tx.wait()),
+      {
+        loading: "Depositing profit...",
+        success: "Profit deposited",
+        error: (error) => {
+          markErrorHandled(error);
+          return `Profit deposit failed: ${getRevertMessage(error)}`;
+        },
+      },
+    );
   };
 
   if (!address) {
@@ -754,7 +733,7 @@ const ProjectPage = () => {
                   onClick={() => setIsBridgeModalOpen(true)}
                   className="button-blocky w-full rounded px-3 py-2 text-[11px] uppercase"
                 >
-                  Select Source Chain
+                  Deposit
                 </button>
               </div>
 
@@ -771,7 +750,7 @@ const ProjectPage = () => {
                     </p>
                   </div>
                   <button
-                    onClick={handleClaim}
+                    onClick={() => setIsClaimModalOpen(true)}
                     disabled={!canClaim}
                     className="button-blocky rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -808,7 +787,7 @@ const ProjectPage = () => {
                     </p>
                   </div>
                   <button
-                    onClick={handleWithdrawRaised}
+                    onClick={() => setIsWithdrawModalOpen(true)}
                     disabled={!canWithdrawRaised}
                     className="button-blocky rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -824,15 +803,9 @@ const ProjectPage = () => {
                 <p className="mb-2 text-[10px] text-stone-400">
                   Deposit Profit
                 </p>
-                <input
-                  className="input-blocky mb-3 w-full rounded px-3 py-2 text-xs"
-                  type="number"
-                  min="0"
-                  value={profitAmount}
-                  onChange={(e) => setProfitAmount(e.target.value)}
-                />
+
                 <button
-                  onClick={handleDepositProfit}
+                  onClick={() => setIsAddProfitModalOpen(true)}
                   disabled={!profitsOpen}
                   className="button-blocky w-full rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -902,6 +875,46 @@ const ProjectPage = () => {
         onClose={() => setIsBridgeModalOpen(false)}
         project={project}
         onDepositComplete={handleDepositComplete}
+        ctaLabel="Deposit"
+        bridgeMode="before"
+        showAmount={true}
+        initialAmount="0"
+      />
+
+      <BridgeKitModal
+        isOpen={isClaimModalOpen}
+        onClose={() => setIsClaimModalOpen(false)}
+        project={project}
+        onDepositComplete={handleClaimComplete}
+        ctaLabel="Claim"
+        bridgeMode="after"
+        showAmount={false}
+        initialAmount={formatUnits(claimableAmount, 6)}
+        onContractMethod={handleClaimContract}
+      />
+
+      <BridgeKitModal
+        isOpen={isWithdrawModalOpen}
+        onClose={() => setIsWithdrawModalOpen(false)}
+        project={project}
+        onDepositComplete={handleWithdrawComplete}
+        ctaLabel="Withdraw"
+        bridgeMode="after"
+        initialAmount={formatUnits(withdrawPrincipal, 6)}
+        showAmount={false}
+        onContractMethod={handleWithdrawContract}
+      />
+
+      <BridgeKitModal
+        isOpen={isAddProfitModalOpen}
+        onClose={() => setIsAddProfitModalOpen(false)}
+        project={project}
+        onDepositComplete={handleAddProfitComplete}
+        ctaLabel="Add Profit"
+        bridgeMode="before"
+        showAmount={true}
+        initialAmount="0"
+        onContractMethod={handleAddProfitContract}
       />
     </div>
   );

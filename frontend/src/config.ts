@@ -10,7 +10,7 @@ const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   5042002: "https://explorer.arctest.net", // Arc Testnet
 };
 
-const FALLBACK_CHAIN_ID = 11155111;
+export const FALLBACK_CHAIN_ID = 5042002;
 
 // Arc Testnet Chain ID for BridgeKit comparison
 export const ARC_TESTNET_CHAIN_ID = 5042002;
