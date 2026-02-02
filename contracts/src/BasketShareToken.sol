@@ -19,11 +19,7 @@ contract BasketShareToken is ERC20 {
         _;
     }
 
-    constructor(
-        string memory name_,
-        string memory symbol_,
-        address vault_
-    ) ERC20(name_, symbol_) {
+    constructor(string memory name_, string memory symbol_, address vault_) ERC20(name_, symbol_) {
         require(vault_ != address(0), "Vault address required");
         vault = vault_;
     }
