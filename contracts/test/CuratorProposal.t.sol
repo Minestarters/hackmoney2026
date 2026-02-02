@@ -47,6 +47,7 @@ contract CuratorProposalTest is Test {
             address(mine),
             "Mine Basket",
             companies,
+            block.timestamp + 1 days,
             1_000e6,
             block.timestamp + 7 days,
             address(0xBEEF),
@@ -55,10 +56,10 @@ contract CuratorProposalTest is Test {
         );
     }
 
-    function test_SettleBatchAndFinalize() public {
+    function test_SettleAndFinalize() public {
         uint256 stakeOne = 1_000 ether;
         uint256 stakeTwo = 3_000 ether;
-        uint256 deadline = block.timestamp + 1 days;
+        uint256 permitDeadline = block.timestamp + 3 days;
 
         uint256[] memory allocationsOne = new uint256[](3);
         allocationsOne[0] = 50;
@@ -75,14 +76,14 @@ contract CuratorProposalTest is Test {
             curatorOne,
             address(proposal),
             stakeOne,
-            deadline
+            permitDeadline
         );
         (uint8 permitV2, bytes32 permitR2, bytes32 permitS2) = _signPermit(
             curatorKeyTwo,
             curatorTwo,
             address(proposal),
             stakeTwo,
-            deadline
+            permitDeadline
         );
 
         bytes memory allocationSigOne = _signAllocation(curatorKeyOne, curatorOne, stakeOne, 0, allocationsOne);
@@ -93,7 +94,7 @@ contract CuratorProposalTest is Test {
             curator: curatorOne,
             stake: stakeOne,
             nonce: 0,
-            permitDeadline: deadline,
+            permitDeadline: permitDeadline,
             permitV: permitV1,
             permitR: permitR1,
             permitS: permitS1,
@@ -104,7 +105,7 @@ contract CuratorProposalTest is Test {
             curator: curatorTwo,
             stake: stakeTwo,
             nonce: 0,
-            permitDeadline: deadline,
+            permitDeadline: permitDeadline,
             permitV: permitV2,
             permitR: permitR2,
             permitS: permitS2,
@@ -112,10 +113,11 @@ contract CuratorProposalTest is Test {
             signature: allocationSigTwo
         });
 
-        proposal.settleBatch(settlements);
+        vm.warp(block.timestamp + 2 days);
+        proposal.settleAndFinalize(settlements);
 
         assertEq(proposal.totalStake(), stakeOne + stakeTwo);
-        assertEq(mine.balanceOf(address(proposal)), stakeOne + stakeTwo);
+        assertEq(mine.balanceOf(address(proposal)), 0);
 
         (, uint256 totalAlpha) = proposal.getCandidate(0);
         (, uint256 totalBeta) = proposal.getCandidate(1);
@@ -124,8 +126,6 @@ contract CuratorProposalTest is Test {
         assertEq(totalAlpha, 1_100 ether);
         assertEq(totalBeta, 1_800 ether);
         assertEq(totalGamma, 1_100 ether);
-
-        proposal.finalize();
 
         assertEq(factory.getProjectCount(), 1);
         address vaultAddress = factory.getProjectAt(0);
@@ -138,7 +138,7 @@ contract CuratorProposalTest is Test {
 
     function test_FinalizeCannotBeCalledTwice() public {
         uint256 stake = 1_000 ether;
-        uint256 deadline = block.timestamp + 1 days;
+        uint256 permitDeadline = block.timestamp + 3 days;
         uint256[] memory allocations = new uint256[](3);
         allocations[0] = 50;
         allocations[1] = 30;
@@ -149,7 +149,7 @@ contract CuratorProposalTest is Test {
             curatorOne,
             address(proposal),
             stake,
-            deadline
+            permitDeadline
         );
 
         bytes memory allocationSig = _signAllocation(curatorKeyOne, curatorOne, stake, 0, allocations);
@@ -159,7 +159,7 @@ contract CuratorProposalTest is Test {
             curator: curatorOne,
             stake: stake,
             nonce: 0,
-            permitDeadline: deadline,
+            permitDeadline: permitDeadline,
             permitV: permitV,
             permitR: permitR,
             permitS: permitS,
@@ -167,8 +167,8 @@ contract CuratorProposalTest is Test {
             signature: allocationSig
         });
 
-        proposal.settleBatch(settlements);
-        proposal.finalize();
+        vm.warp(block.timestamp + 2 days);
+        proposal.settleAndFinalize(settlements);
 
         vm.expectRevert(CuratorProposal.AlreadyFinalized.selector);
         proposal.finalize();
@@ -176,7 +176,7 @@ contract CuratorProposalTest is Test {
 
     function test_InvalidSignatureReverts() public {
         uint256 stake = 1_000 ether;
-        uint256 deadline = block.timestamp + 1 days;
+        uint256 permitDeadline = block.timestamp + 3 days;
         uint256[] memory allocations = new uint256[](3);
         allocations[0] = 50;
         allocations[1] = 30;
@@ -187,7 +187,7 @@ contract CuratorProposalTest is Test {
             curatorOne,
             address(proposal),
             stake,
-            deadline
+            permitDeadline
         );
 
         bytes memory allocationSig = _signAllocation(curatorKeyTwo, curatorTwo, stake, 0, allocations);
@@ -197,7 +197,7 @@ contract CuratorProposalTest is Test {
             curator: curatorOne,
             stake: stake,
             nonce: 0,
-            permitDeadline: deadline,
+            permitDeadline: permitDeadline,
             permitV: permitV,
             permitR: permitR,
             permitS: permitS,
@@ -205,8 +205,9 @@ contract CuratorProposalTest is Test {
             signature: allocationSig
         });
 
+        vm.warp(block.timestamp + 2 days);
         vm.expectRevert(CuratorProposal.InvalidSignature.selector);
-        proposal.settleBatch(settlements);
+        proposal.settleAndFinalize(settlements);
     }
 
     function _signAllocation(

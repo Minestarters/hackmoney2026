@@ -34,6 +34,7 @@ contract CuratorProposal {
     address public immutable proposer;
 
     string public projectName;
+    uint256 public commitmentDeadline;
     uint256 public minimumRaise;
     uint256 public deadline;
     address public withdrawAddress;
@@ -55,6 +56,7 @@ contract CuratorProposal {
     error InvalidSignature();
     error InvalidAllocations();
     error InvalidSettlement();
+    error CommitmentNotReached();
     error ZeroStake();
     error ZeroAddress();
 
@@ -63,6 +65,7 @@ contract CuratorProposal {
         address mineToken,
         string memory projectName_,
         string[] memory companyNames,
+        uint256 commitmentDeadline_,
         uint256 minimumRaise_,
         uint256 deadline_,
         address withdrawAddress_,
@@ -73,7 +76,9 @@ contract CuratorProposal {
             revert ZeroAddress();
         }
         require(companyNames.length > 0, "No companies");
+        require(commitmentDeadline_ > block.timestamp, "Commitment must be future");
         require(deadline_ > block.timestamp, "Deadline must be future");
+        require(commitmentDeadline_ < deadline_, "Commitment must precede deadline");
         require(raiseFeeBps_ <= 10_000, "Invalid raise fee");
         require(profitFeeBps_ <= 10_000, "Invalid profit fee");
         require(minimumRaise_ > 0, "Minimum raise required");
@@ -84,6 +89,7 @@ contract CuratorProposal {
         proposer = msg.sender;
 
         projectName = projectName_;
+        commitmentDeadline = commitmentDeadline_;
         minimumRaise = minimumRaise_;
         deadline = deadline_;
         withdrawAddress = withdrawAddress_;
@@ -114,10 +120,32 @@ contract CuratorProposal {
     }
 
     function settleBatch(Settlement[] calldata settlements) external {
+        if (block.timestamp < commitmentDeadline) {
+            revert CommitmentNotReached();
+        }
         if (finalized) {
             revert AlreadyFinalized();
         }
 
+        _applySettlements(settlements);
+    }
+
+    function settleAndFinalize(Settlement[] calldata settlements) external returns (address vault) {
+        if (msg.sender != proposer) {
+            revert("Only proposer");
+        }
+        if (block.timestamp < commitmentDeadline) {
+            revert CommitmentNotReached();
+        }
+        if (finalized) {
+            revert AlreadyFinalized();
+        }
+
+        _applySettlements(settlements);
+        vault = _finalize();
+    }
+
+    function _applySettlements(Settlement[] calldata settlements) internal {
         uint256 candidateLen = candidateCompanies.length;
         for (uint256 i = 0; i < settlements.length; i++) {
             Settlement calldata settlement = settlements[i];
@@ -182,12 +210,19 @@ contract CuratorProposal {
     }
 
     function finalize() external returns (address vault) {
+        if (block.timestamp < commitmentDeadline) {
+            revert CommitmentNotReached();
+        }
         if (finalized) {
             revert AlreadyFinalized();
         }
         require(msg.sender == proposer, "Only proposer");
         require(totalStake > 0, "No stake");
 
+        vault = _finalize();
+    }
+
+    function _finalize() internal returns (address vault) {
         finalized = true;
 
         uint256 candidateLen = candidateCompanies.length;
@@ -213,7 +248,16 @@ contract CuratorProposal {
             profitFeeBps
         );
 
+        uint256 burnAmount = mine.balanceOf(address(this));
+        if (burnAmount > 0) {
+            IMineBurnable(address(mine)).burn(burnAmount);
+        }
+
         vault = factory.getProjectAt(factory.getProjectCount() - 1);
         emit Finalized(address(factory), vault);
     }
+}
+
+interface IMineBurnable {
+    function burn(uint256 amount) external;
 }

@@ -11,4 +11,8 @@ contract MineStarters is ERC20, ERC20Permit {
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
     }
+
+    function burn(uint256 amount) external {
+        _burn(msg.sender, amount);
+    }
 }
