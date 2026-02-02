@@ -7,9 +7,13 @@ export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
 const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",
   11155111: "https://sepolia.etherscan.io",
+  5042002: "https://explorer.arctest.net", // Arc Testnet
 };
 
 const FALLBACK_CHAIN_ID = 11155111;
+
+// Arc Testnet Chain ID for BridgeKit comparison
+export const ARC_TESTNET_CHAIN_ID = 5042002;
 
 const normalizeChainId = (chainId?: number | bigint | null) => {
   if (typeof chainId === "bigint") {

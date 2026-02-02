@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
+import BridgeKitModal from "../components/BridgeKitModal";
 import {
   EXPLORER_URL,
   STAGE_LABELS,
@@ -174,9 +175,9 @@ const ProjectPage = () => {
   const [supportCount, setSupportCount] = useState<number | null>(null);
   const [totalClaimed, setTotalClaimed] = useState<bigint | null>(null);
   const [activeTab, setActiveTab] = useState<"investor" | "spv">("investor");
-  const [amount, setAmount] = useState("0");
   const [profitAmount, setProfitAmount] = useState("0");
   const [loading, setLoading] = useState(false);
+  const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [explorerBaseUrl, setExplorerBaseUrl] = useState(() =>
     sanitizeExplorerUrl(getExplorerUrl()),
@@ -298,65 +299,9 @@ const ProjectPage = () => {
     };
   }, [account, project, provider]);
 
-  const handleDeposit = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
-      return;
-    }
-    if (project.stage === 2) {
-      toast.error("Fundraise closed");
-      return;
-    }
-    if (!USDC_ADDRESS) {
-      toast.error("Set VITE_USDC_ADDRESS for deposits");
-      return;
-    }
-    try {
-      const value = parseUnits(amount || "0", 6);
-      const usdc = getUsdc(signer);
-      const owner = await signer.getAddress();
-      const balance: bigint = await usdc.balanceOf(owner);
-      if (balance < value) {
-        toast.error(
-          `Insufficient USDC balance. You have ${formatUsdc(balance)} but need ${formatUsdc(value)}`,
-        );
-        return;
-      }
-      const allowance: bigint = await usdc.allowance(owner, project.address);
-      if (allowance < value) {
-        await toast.promise(
-          usdc.approve(project.address, value).then((tx) => tx.wait()),
-          {
-            loading: "Approving USDC...",
-            success: "USDC approved",
-            error: (error) => {
-              markErrorHandled(error);
-              return `Approval failed: ${getRevertMessage(error)}`;
-            },
-          },
-        );
-      }
-
-      const vault = getVault(project.address, signer);
-      await toast.promise(
-        vault.deposit(value).then((tx) => tx.wait()),
-        {
-          loading: "Depositing...",
-          success: "Deposit confirmed",
-          error: (error) => {
-            markErrorHandled(error);
-            return `Deposit failed: ${getRevertMessage(error)}`;
-          },
-        },
-      );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Deposit failed: ${getRevertMessage(error)}`);
-      }
-    }
+  const handleDepositComplete = async () => {
+    await reloadProjectData();
+    setIsBridgeModalOpen(false);
   };
 
   const handleClaim = async () => {
@@ -805,18 +750,11 @@ const ProjectPage = () => {
             <div className="space-y-4">
               <div className="rounded border-4 border-dirt bg-night/40 p-3">
                 <p className="mb-2 text-[10px] text-stone-400">Deposit USDC</p>
-                <input
-                  className="input-blocky mb-3 w-full rounded px-3 py-2 text-xs"
-                  type="number"
-                  min="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
                 <button
-                  onClick={handleDeposit}
+                  onClick={() => setIsBridgeModalOpen(true)}
                   className="button-blocky w-full rounded px-3 py-2 text-[11px] uppercase"
                 >
-                  Deposit
+                  Select Source Chain
                 </button>
               </div>
 
@@ -958,6 +896,13 @@ const ProjectPage = () => {
           </div>
         </div>
       </div>
+
+      <BridgeKitModal
+        isOpen={isBridgeModalOpen}
+        onClose={() => setIsBridgeModalOpen(false)}
+        project={project}
+        onDepositComplete={handleDepositComplete}
+      />
     </div>
   );
 };
