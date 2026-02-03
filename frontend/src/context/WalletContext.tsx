@@ -12,7 +12,7 @@ import {
 import { RPC_URL } from "../config";
 
 type WalletContextState = {
-  account: string | null;
+  account: `0x${string}` | null;
   provider: BrowserProvider | JsonRpcProvider;
   signer: JsonRpcSigner | null;
   connect: () => Promise<void>;
@@ -73,7 +73,7 @@ const WalletContext = createContext<WalletContextState>({
 });
 
 export const WalletProvider = ({ children }: PropsWithChildren) => {
-  const [account, setAccount] = useState<string | null>(null);
+  const [account, setAccount] = useState<`0x${string}` | null>(null);
   const [provider, setProvider] = useState<BrowserProvider | JsonRpcProvider>(
     fallbackProvider
   );
@@ -116,7 +116,7 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
       const address = await signerInstance.getAddress();
       setProvider(browserProvider);
       setSigner(signerInstance);
-      setAccount(address);
+      setAccount(address as `0x${string}`);
       try {
         window.localStorage.setItem(LOCAL_STORAGE_KEY, "1");
       } catch {
@@ -130,7 +130,7 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     if (!window.ethereum) return;
 
-    const handleAccountsChanged = (accounts: string[]) => {
+    const handleAccountsChanged = (accounts: `0x${string}`[]) => {
       if (accounts.length === 0) {
         setAccount(null);
         setSigner(null);
@@ -180,7 +180,7 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
           return;
         }
 
-        const accounts: string[] = await browserProvider.send("eth_accounts", []);
+        const accounts: `0x${string}`[] = await browserProvider.send("eth_accounts", []);
         if (!accounts || accounts.length === 0) {
           window.localStorage.removeItem(LOCAL_STORAGE_KEY);
           return;
@@ -205,7 +205,7 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
   }, []);
 
   const value = useMemo(
-    () => ({ account, provider, signer, connect, isConnecting }),
+    (): WalletContextState => ({ account, provider, signer, connect, isConnecting }),
     [account, provider, signer, connect, isConnecting]
   );
 
