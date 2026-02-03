@@ -34,7 +34,6 @@ const CreateProjectPage = () => {
   const [minimumRaise, setMinimumRaise] = useState("1000");
   const [deadline, setDeadline] = useState(() => toDateInputValue(addDays(new Date(), 30)));
   const [raiseFeePct, setRaiseFeePct] = useState("0.05");
-  const [profitFeePct, setProfitFeePct] = useState("0.01");
   const [withdrawAddress, setWithdrawAddress] = useState("");
   const [companies, setCompanies] = useState<CompanyInput[]>([
     { name: "Company A", weight: 50 },
@@ -92,9 +91,8 @@ const CreateProjectPage = () => {
         return;
       }
       const raiseFeeBps = Math.round((parseFloat(raiseFeePct || "0") || 0) * 100);
-      const profitFeeBps = Math.round((parseFloat(profitFeePct || "0") || 0) * 100);
 
-      if (raiseFeeBps > 10_000 || profitFeeBps > 10_000) {
+      if (raiseFeeBps > 10_000) {
         setMessage("Fees cannot exceed 100%");
         setSubmitting(false);
         return;
@@ -107,8 +105,7 @@ const CreateProjectPage = () => {
         minRaise,
         deadlineTs,
         withdrawAddress,
-        raiseFeeBps,
-        profitFeeBps
+        raiseFeeBps
       );
 
       await tx.wait();
@@ -173,18 +170,6 @@ const CreateProjectPage = () => {
               step="0.01"
               value={raiseFeePct}
               onChange={(e) => setRaiseFeePct(e.target.value)}
-              min="0"
-              max="100"
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Profit fee (%)</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              type="number"
-              step="0.01"
-              value={profitFeePct}
-              onChange={(e) => setProfitFeePct(e.target.value)}
               min="0"
               max="100"
             />

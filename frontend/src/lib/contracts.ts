@@ -86,13 +86,9 @@ export const fetchProjectInfo = async (
     minimumRaise: info.minRaise,
     deadline: info.projectDeadline,
     raiseFeeBps: Number(info.raiseFee),
-    profitFeeBps: Number(info.profitFee),
     totalRaised: info.raised,
     accruedRaiseFees,
-    totalProfit: info.profit,
     totalRaiseFeesPaid: info.raiseFeesPaid ?? 0n,
-    totalProfitFeesPaid: info.profitFeesPaid ?? 0n,
-    profitPerShare: info.currentProfitPerShare,
     finalized: info.isFinalized,
     withdrawable,
     withdrawableFees,
@@ -143,13 +139,8 @@ export const fetchTotalClaimed = async (
   projectAddress: string,
   provider: BrowserProvider | JsonRpcProvider
 ): Promise<bigint> => {
-  const vault = getVault(projectAddress, provider);
-  const events = await fetchEventsInChunks(vault, "ProfitClaimed", provider);
-
-  return events.reduce((sum, event) => {
-    const amount = (event as any)?.args?.amount as bigint | undefined;
-    return amount != null ? sum + BigInt(amount) : sum;
-  }, 0n);
+  // Profit claiming is now off-chain/cross-chain and not tracked by vault events
+  return 0n;
 };
 
 export const fetchUserPosition = async (
@@ -157,11 +148,6 @@ export const fetchUserPosition = async (
   user: string,
   provider: BrowserProvider | JsonRpcProvider
 ): Promise<UserPosition> => {
-  const vault = getVault(project.address, provider);
-  const [userInfo, pending] = await Promise.all([
-    vault.getUserInfo(user),
-    vault.pendingProfit(user),
-  ]);
   const shareToken = new Contract(project.shareToken, erc20Abi, provider);
   const [usdcBalance, shareBalance] = await Promise.all([
     getUsdc(provider).balanceOf(user),
@@ -169,9 +155,7 @@ export const fetchUserPosition = async (
   ]);
 
   return {
-    shares: userInfo.shares,
-    claimed: userInfo.totalClaimed,
-    pending,
+    shares: shareBalance,
     usdcBalance,
     shareBalance,
   };

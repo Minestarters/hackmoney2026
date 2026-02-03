@@ -11,13 +11,9 @@ export type ProjectInfo = {
   minimumRaise: bigint;
   deadline: bigint;
   raiseFeeBps: number;
-  profitFeeBps: number;
   totalRaised: bigint;
   accruedRaiseFees: bigint;
-  totalProfit: bigint;
   totalRaiseFeesPaid: bigint;
-  totalProfitFeesPaid: bigint;
-  profitPerShare: bigint;
   finalized: boolean;
   withdrawable: bigint;
   withdrawableFees: bigint;
@@ -27,8 +23,5 @@ export type ProjectInfo = {
 
 export type UserPosition = {
   shares: bigint;
-  claimed: bigint;
-  pending: bigint;
   usdcBalance: bigint;
-  shareBalance: bigint;
 };

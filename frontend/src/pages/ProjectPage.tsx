@@ -13,7 +13,6 @@ import { useWallet } from "../context/WalletContext";
 import {
   fetchProjectInfo,
   fetchSupporterCount,
-  fetchTotalClaimed,
   fetchUserPosition,
   getVault,
   getUsdc,
@@ -140,42 +139,15 @@ const IconFee = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const IconProfit = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    {...props}
-  >
-    <path d="M3 3v18h18" />
-    <path d="M7 14l4-4 3 3 5-7" />
-  </svg>
-);
-
-const IconClaim = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    {...props}
-  >
-    <path d="M21 6H3v12h18V6z" />
-    <path d="M7 12l3 3 7-7" />
-  </svg>
-);
-
 const ProjectPage = () => {
   const { address } = useParams<{ address: string }>();
-  const { provider, signer, account, connect } = useWallet();
+  const { provider, signer, account, connect } =
+    useWallet();
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [position, setPosition] = useState<UserPosition | null>(null);
   const [supportCount, setSupportCount] = useState<number | null>(null);
-  const [totalClaimed, setTotalClaimed] = useState<bigint | null>(null);
   const [activeTab, setActiveTab] = useState<"investor" | "spv">("investor");
   const [amount, setAmount] = useState("0");
-  const [profitAmount, setProfitAmount] = useState("0");
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [explorerBaseUrl, setExplorerBaseUrl] = useState(() =>
@@ -230,18 +202,15 @@ const ProjectPage = () => {
   const reloadProjectData = useCallback(async () => {
     if (!address || !provider) return;
     setSupportCount(null);
-    setTotalClaimed(null);
 
     try {
-      const [info, supporters, claimedTotal] = await Promise.all([
+      const [info, supporters] = await Promise.all([
         fetchProjectInfo(address, provider),
         fetchSupporterCount(address, provider),
-        fetchTotalClaimed(address, provider),
       ]);
 
       setProject(info);
       setSupportCount(supporters);
-      setTotalClaimed(claimedTotal);
     } catch (error) {
       console.error("Failed to reload project data", error);
     }
@@ -453,68 +422,6 @@ const ProjectPage = () => {
     }
   };
 
-  const handleDepositProfit = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
-      return;
-    }
-    if (!USDC_ADDRESS) {
-      toast.error("Set VITE_USDC_ADDRESS for deposits");
-      return;
-    }
-
-    try {
-      const value = parseUnits(profitAmount || "0", 6);
-      if (value <= 0n) {
-        toast.error("Enter a profit amount greater than zero");
-        return;
-      }
-      if (!profitsOpen) {
-        toast.error(
-          "Project must reach the minimum raise before profit deposits",
-        );
-        return;
-      }
-
-      const usdc = getUsdc(signer);
-      const owner = await signer.getAddress();
-      const allowance: bigint = await usdc.allowance(owner, project.address);
-      if (allowance < value) {
-        await toast.promise(
-          usdc.approve(project.address, value).then((tx) => tx.wait()),
-          {
-            loading: "Approving USDC...",
-            success: "USDC approved",
-            error: (error) => {
-              markErrorHandled(error);
-              return `Approval failed: ${getRevertMessage(error)}`;
-            },
-          },
-        );
-      }
-
-      const vault = getVault(project.address, signer);
-      await toast.promise(
-        vault.depositProfit(value).then((tx) => tx.wait()),
-        {
-          loading: "Depositing profit...",
-          success: "Profit deposited",
-          error: (error) => {
-            markErrorHandled(error);
-            return `Profit deposit failed: ${getRevertMessage(error)}`;
-          },
-        },
-      );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Profit deposit failed: ${getRevertMessage(error)}`);
-      }
-    }
-  };
-
   if (!address) {
     return <p className="text-xs text-stone-200">Missing vault address.</p>;
   }
@@ -523,8 +430,6 @@ const ProjectPage = () => {
     return <p className="text-xs text-stone-200">Loading project...</p>;
   }
 
-  const claimableAmount = position?.pending ?? 0n;
-  const canClaim = profitsOpen && claimableAmount > 0n;
   const showRefund = Boolean(
     position && project.stage === 2 && position.shares > 0n,
   );
@@ -537,8 +442,7 @@ const ProjectPage = () => {
       ? (project.totalRaised * 10_000n) / project.minimumRaise
       : 0n;
   const raisedPct = Math.min(100, Math.max(0, Number(raisedBps) / 100));
-  const creatorFeesPaid =
-    project.totalRaiseFeesPaid + project.totalProfitFeesPaid;
+  const creatorFeesPaid = project.totalRaiseFeesPaid;
   const withdrawnBySpv =
     project.withdrawnTotal > project.totalRaiseFeesPaid
       ? project.withdrawnTotal - project.totalRaiseFeesPaid
@@ -625,15 +529,6 @@ const ProjectPage = () => {
               }
             />
             <MetricCard
-              label="Revenue Fee"
-              icon={IconFee}
-              value={
-                <span className="text-[12px] text-stone-300">
-                  {formatBpsAsPercent(project.profitFeeBps)}
-                </span>
-              }
-            />
-            <MetricCard
               label="Supporters"
               icon={IconUsers}
               value={
@@ -646,26 +541,6 @@ const ProjectPage = () => {
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <MetricCard
-              label="Lifetime Profit"
-              icon={IconProfit}
-              value={
-                <span className="text-[12px] text-stone-300">
-                  {formatUsdc(project.totalProfit)} USDC
-                </span>
-              }
-            />
-            <MetricCard
-              label="Profits Claimed"
-              icon={IconClaim}
-              value={
-                <span className="text-[12px] text-stone-300">
-                  {totalClaimed === null
-                    ? "—"
-                    : `${formatUsdc(totalClaimed)} USDC`}
-                </span>
-              }
-            />
             <MetricCard
               label="Creator Fees Paid"
               icon={IconFee}
@@ -820,28 +695,6 @@ const ProjectPage = () => {
                 </button>
               </div>
 
-              <div className="rounded border-4 border-dirt bg-night/40 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] text-stone-400">
-                      Claimable profit
-                    </p>
-                    <p className="text-[11px] text-sky-100">
-                      {account
-                        ? `${formatUsdc(claimableAmount)} USDC`
-                        : "Connect wallet to view"}
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleClaim}
-                    disabled={!canClaim}
-                    className="button-blocky rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Claim
-                  </button>
-                </div>
-              </div>
-
               {showRefund && (
                 <div className="rounded border-4 border-dirt bg-night/40 p-3">
                   <p className="mb-2 text-[10px] text-stone-400">Refund</p>
@@ -880,26 +733,6 @@ const ProjectPage = () => {
                 <p className="text-[10px] text-stone-500">
                   Creator Fee: {formatUsdc(withdrawFees)} USDC
                 </p>
-              </div>
-
-              <div className="rounded border-4 border-dirt bg-night/40 p-3">
-                <p className="mb-2 text-[10px] text-stone-400">
-                  Deposit Profit
-                </p>
-                <input
-                  className="input-blocky mb-3 w-full rounded px-3 py-2 text-xs"
-                  type="number"
-                  min="0"
-                  value={profitAmount}
-                  onChange={(e) => setProfitAmount(e.target.value)}
-                />
-                <button
-                  onClick={handleDepositProfit}
-                  disabled={!profitsOpen}
-                  className="button-blocky w-full rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Add Profit
-                </button>
               </div>
             </div>
           )}
@@ -941,12 +774,6 @@ const ProjectPage = () => {
                   <span className="text-stone-300">Share balance</span>
                   <span className="text-sky-100">
                     {formatUsdc(position.shareBalance)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-stone-300">Claimable profit</span>
-                  <span className="text-sky-100">
-                    {formatUsdc(position.pending)}
                   </span>
                 </div>
               </div>
