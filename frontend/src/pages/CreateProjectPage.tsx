@@ -1,30 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Contract, Wallet, isAddress, parseUnits } from "ethers";
-import {
-  EIP712AuthTypes,
-  RPCAppStateIntent,
-  RPCMethod,
-  createAppSessionMessage,
-  createApplicationMessage,
-  createAuthRequestMessage,
-  createAuthVerifyMessageFromChallenge,
-  createECDSAMessageSigner,
-  createGetAppDefinitionMessage,
-  createGetAppSessionsMessage,
-  createSubmitAppStateMessage,
-  parseAnyRPCResponse,
-} from "@erc7824/nitrolite";
-import {
-  FACTORY_ADDRESS,
-  YELLOW_APPLICATION,
-  YELLOW_ASSET,
-  YELLOW_PROTOCOL,
-  YELLOW_SCOPE,
-  YELLOW_SESSION_EXPIRES_MS,
-  YELLOW_WS_URL,
-} from "../config";
+import { Contract, isAddress, parseUnits } from "ethers";
+import { FACTORY_ADDRESS } from "../config";
 import { minestartersFactoryAbi } from "../contracts/abis";
 import { useWallet } from "../context/WalletContext";
+import {
+  YellowApp,
+  type YellowConnectionStatus,
+  type YellowAuthStatus,
+  type YellowSessionInfo,
+} from "../lib/YellowApp";
+import type { Address } from "viem";
 
 type CompanyInput = { name: string; weight: number };
 type RoomMessage = {
@@ -43,22 +28,6 @@ type RoomState = {
   profitFeePct: string;
   withdrawAddress: string;
   companies: CompanyInput[];
-};
-
-type YellowStatus = "disconnected" | "connecting" | "connected";
-type AuthStatus = "unauthenticated" | "authenticating" | "authenticated";
-type YellowSessionInfo = {
-  appSessionId: string;
-  protocol: string;
-  participants: string[];
-  status: string;
-  version: number;
-  sessionData?: string;
-};
-
-type SessionKey = {
-  privateKey: string;
-  address: string;
 };
 
 const toDateInputValue = (date: Date) => {
@@ -97,24 +66,21 @@ const CreateProjectPage = () => {
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [yellowStatus, setYellowStatus] = useState<YellowStatus>("disconnected");
-  const [authStatus, setAuthStatus] = useState<AuthStatus>("unauthenticated");
+  const [yellowStatus, setYellowStatus] = useState<YellowConnectionStatus>("disconnected");
+  const [authStatus, setAuthStatus] = useState<YellowAuthStatus>("unauthenticated");
   const [roomError, setRoomError] = useState<string | null>(null);
   const [participantsInput, setParticipantsInput] = useState("");
   const [roomNonce, setRoomNonce] = useState(() => `${Date.now()}`);
-  const [sessionId, setSessionId] = useState("");
+  const [sessionId, setSessionId] = useState<`0x${string}` | null>(null);
   const [sessionParticipants, setSessionParticipants] = useState<string[]>([]);
   const [availableSessions, setAvailableSessions] = useState<YellowSessionInfo[]>([]);
   const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const wsRef = useRef<WebSocket | null>(null);
+
+  const yellowAppRef = useRef<YellowApp | null>(null);
   const suppressBroadcastRef = useRef(false);
   const lastUpdateIdRef = useRef<string | null>(null);
   const nextMessageIdRef = useRef(0);
-  const appStateVersionRef = useRef(0);
-  const sessionKeyRef = useRef<SessionKey | null>(null);
-  const sessionSignerRef = useRef<((payload: unknown) => Promise<string>) | null>(null);
-  const authInFlightRef = useRef(false);
 
   const collaborationState = useMemo<RoomState>(
     () => ({
@@ -137,6 +103,64 @@ const CreateProjectPage = () => {
     ]
   );
 
+  const handleIncomingState = useCallback((state: RoomState) => {
+    suppressBroadcastRef.current = true;
+    setProjectName(state.projectName ?? "");
+    setMinimumRaise(state.minimumRaise ?? "0");
+    setDeadline(state.deadline ?? toDateInputValue(addDays(new Date(), 30)));
+    setRaiseFeePct(state.raiseFeePct ?? "0");
+    setProfitFeePct(state.profitFeePct ?? "0");
+    setWithdrawAddress(state.withdrawAddress ?? "");
+    if (state.companies?.length) {
+      setCompanies(
+        state.companies.map((company) => ({
+          name: company.name ?? "",
+          weight: Number(company.weight ?? 0),
+        }))
+      );
+    }
+  }, []);
+
+  const handleYellowMessage = useCallback(
+    (payload: unknown) => {
+      if (!payload || typeof payload !== "object") return;
+      const p = payload as Record<string, unknown>;
+      const messageType = p.type as RoomMessage["type"];
+      const updateId = String(p.id ?? p.updateId ?? "");
+      if (updateId && updateId === lastUpdateIdRef.current) return;
+      if (updateId) {
+        lastUpdateIdRef.current = updateId;
+      }
+      const sender = p.sender as string | undefined;
+      const timestamp = Number(p.timestamp || Date.now());
+      const data = p.data as Record<string, unknown> | undefined;
+
+      if (messageType === "state:update" && data?.state) {
+        if (sender && account && sender.toLowerCase() === account.toLowerCase()) {
+          return;
+        }
+        handleIncomingState(data.state as RoomState);
+      }
+
+      if (messageType === "chat:message" && data?.text) {
+        if (sender && account && sender.toLowerCase() === account.toLowerCase()) {
+          return;
+        }
+        setRoomMessages((prev) => [
+          ...prev,
+          {
+            id: updateId || `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            sender,
+            type: "chat:message",
+            data: data,
+            timestamp,
+          },
+        ]);
+      }
+    },
+    [account, handleIncomingState]
+  );
+
   useEffect(() => {
     if (account && !withdrawAddress) {
       setWithdrawAddress(account);
@@ -155,9 +179,10 @@ const CreateProjectPage = () => {
     }
   }, [account, participantsInput]);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      wsRef.current?.close();
+      yellowAppRef.current?.disconnect();
     };
   }, []);
 
@@ -185,24 +210,6 @@ const CreateProjectPage = () => {
     return Array.from(new Set(participants.map((entry) => entry.toLowerCase())));
   }, [participantsInput, account]);
 
-  const handleIncomingState = useCallback((state: RoomState) => {
-    suppressBroadcastRef.current = true;
-    setProjectName(state.projectName ?? "");
-    setMinimumRaise(state.minimumRaise ?? "0");
-    setDeadline(state.deadline ?? toDateInputValue(addDays(new Date(), 30)));
-    setRaiseFeePct(state.raiseFeePct ?? "0");
-    setProfitFeePct(state.profitFeePct ?? "0");
-    setWithdrawAddress(state.withdrawAddress ?? "");
-    if (state.companies?.length) {
-      setCompanies(
-        state.companies.map((company) => ({
-          name: company.name ?? "",
-          weight: Number(company.weight ?? 0),
-        }))
-      );
-    }
-  }, []);
-
   const applySessionData = useCallback(
     (raw?: string) => {
       if (!raw) return;
@@ -216,301 +223,87 @@ const CreateProjectPage = () => {
     [handleIncomingState]
   );
 
-  const getOrCreateSessionKey = useCallback(() => {
-    if (sessionKeyRef.current) {
-      return sessionKeyRef.current;
-    }
-    const storageKey = "minestarters_yellow_session_key";
-    const stored = window.localStorage.getItem(storageKey);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as SessionKey;
-        if (parsed?.privateKey && parsed?.address) {
-          sessionKeyRef.current = parsed;
-          return parsed;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    const wallet = Wallet.createRandom();
-    const sessionKey = { privateKey: wallet.privateKey, address: wallet.address };
-    sessionKeyRef.current = sessionKey;
-    window.localStorage.setItem(storageKey, JSON.stringify(sessionKey));
-    return sessionKey;
-  }, []);
-
-  const getSessionSigner = useCallback(() => {
-    if (sessionSignerRef.current) {
-      return sessionSignerRef.current;
-    }
-    const sessionKey = getOrCreateSessionKey();
-    const signer = createECDSAMessageSigner(sessionKey.privateKey as `0x${string}`);
-    sessionSignerRef.current = signer;
-    return signer;
-  }, [getOrCreateSessionKey]);
-
-  const ensureAuth = useCallback(
-    async (challengeMessage?: string) => {
-      if (!signer || !account) return;
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-      if (authStatus === "authenticated") return;
-      if (authInFlightRef.current) return;
-      authInFlightRef.current = true;
-      setAuthStatus("authenticating");
-
-      const sessionKey = getOrCreateSessionKey();
-      const expiresAtSeconds = BigInt(
-        Math.floor((Date.now() + YELLOW_SESSION_EXPIRES_MS) / 1000)
-      );
-      const allowances: { asset: string; amount: string }[] = [];
-      if (!challengeMessage) {
-        const authRequest = await createAuthRequestMessage({
-          address: account as `0x${string}`,
-          session_key: sessionKey.address as `0x${string}`,
-          application: YELLOW_APPLICATION,
-          allowances,
-          expires_at: expiresAtSeconds,
-          scope: YELLOW_SCOPE,
-        });
-        wsRef.current.send(authRequest);
-      }
-
-      if (challengeMessage) {
-        const authSigner = async (payload: unknown) => {
-          const params = (payload as [number, string, { challenge?: string }])[2];
-          const challenge = params?.challenge ?? challengeMessage;
-          const message = {
-            challenge,
-            scope: YELLOW_SCOPE,
-            wallet: account,
-            session_key: sessionKey.address,
-            expires_at: expiresAtSeconds,
-            allowances,
-          };
-          return signer.signTypedData(
-            { name: YELLOW_APPLICATION },
-            EIP712AuthTypes,
-            message
-          );
-        };
-        const verifyMessage = await createAuthVerifyMessageFromChallenge(
-          authSigner,
-          challengeMessage
-        );
-        wsRef.current.send(verifyMessage);
-      }
-    },
-    [signer, account, authStatus, getOrCreateSessionKey]
-  );
-
-  const handleYellowMessage = useCallback(
-    (payload: any) => {
-      if (!payload || typeof payload !== "object") return;
-      const messageType = payload.type as RoomMessage["type"];
-      const updateId = String(payload.id ?? payload.updateId ?? "");
-      if (updateId && updateId === lastUpdateIdRef.current) return;
-      if (updateId) {
-        lastUpdateIdRef.current = updateId;
-      }
-      const sender = payload.sender as string | undefined;
-      const timestamp = Number(payload.timestamp || Date.now());
-
-      if (messageType === "state:update" && payload.data?.state) {
-        if (sender && account && sender.toLowerCase() === account.toLowerCase()) {
-          return;
-        }
-        handleIncomingState(payload.data.state as RoomState);
-      }
-
-      if (messageType === "chat:message" && payload.data?.text) {
-        if (sender && account && sender.toLowerCase() === account.toLowerCase()) {
-          return;
-        }
-        setRoomMessages((prev) => [
-          ...prev,
-          {
-            id: updateId || `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            sender,
-            type: "chat:message",
-            data: payload.data,
-            timestamp,
-          },
-        ]);
-      }
-    },
-    [account, handleIncomingState]
-  );
-
-  const joinSession = useCallback(
-    async (session: YellowSessionInfo) => {
-      setSessionId(session.appSessionId);
-      appStateVersionRef.current = session.version ?? 0;
-      setSessionParticipants(session.participants ?? []);
-      setParticipantsInput(session.participants?.join(", ") ?? "");
-      applySessionData(session.sessionData);
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && signer) {
-        const messageSigner = getSessionSigner();
-        const request = await createGetAppDefinitionMessage(messageSigner, session.appSessionId);
-        wsRef.current.send(request);
-      }
-    },
-    [applySessionData, signer, getSessionSigner]
-  );
-
   const connectYellow = useCallback(async () => {
     setRoomError(null);
-    if (!signer) {
+    if (!signer || !account) {
       await connect();
       return;
     }
 
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
+    // Disconnect existing connection
+    yellowAppRef.current?.disconnect();
 
-    setYellowStatus("connecting");
-    const ws = new WebSocket(YELLOW_WS_URL);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setYellowStatus("connected");
-      void ensureAuth();
-    };
-
-    ws.onclose = () => {
-      setYellowStatus("disconnected");
-      setAuthStatus("unauthenticated");
-    };
-
-    ws.onerror = () => {
-      setRoomError("Yellow connection failed");
-      setYellowStatus("disconnected");
-    };
-
-    ws.onmessage = (event) => {
-      const raw = event.data as string;
-      let parsed: any = null;
-      try {
-        parsed = parseAnyRPCResponse(raw);
-      } catch {
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          parsed = null;
-        }
-      }
-
-      if (parsed?.method === RPCMethod.CreateAppSession) {
-        const info = parsed.params;
-        if (info?.appSessionId) {
-          setSessionId(info.appSessionId);
-          appStateVersionRef.current = info.version ?? 0;
-        }
-        return;
-      }
-
-      if (parsed?.method === RPCMethod.AuthChallenge) {
-        const challenge = parsed.params?.challengeMessage;
-        if (challenge) {
-          authInFlightRef.current = false;
-          void ensureAuth(challenge);
-        }
-        return;
-      }
-
-      if (parsed?.method === RPCMethod.AuthVerify) {
-        if (parsed.params?.success) {
-          setAuthStatus("authenticated");
-          authInFlightRef.current = false;
-        } else {
-          setAuthStatus("unauthenticated");
-          authInFlightRef.current = false;
-          setRoomError("Yellow auth failed");
-        }
-        return;
-      }
-
-      if (parsed?.method === RPCMethod.Error) {
-        const errorText = parsed.params?.error || "Yellow error";
-        setRoomError(errorText);
-        if (errorText.toLowerCase().includes("authentication")) {
-          setAuthStatus("unauthenticated");
-          authInFlightRef.current = false;
-          void ensureAuth();
-        }
-        return;
-      }
-
-      if (parsed?.method === RPCMethod.GetAppSessions) {
-        const sessions = (parsed.params?.appSessions || []) as YellowSessionInfo[];
-        const filtered = sessions.filter((session) => session.protocol === YELLOW_PROTOCOL);
-        setAvailableSessions(filtered);
-        if (!sessionId && account && filtered.length > 0) {
-          const match = filtered.find((session) =>
+    // Create new YellowApp instance with event handlers
+    const app = new YellowApp(account as Address, signer, {
+      onConnectionChange: setYellowStatus,
+      onAuthChange: setAuthStatus,
+      onSessionCreated: (id, version) => {
+        setSessionId(id);
+        console.log("Session created:", id, "version:", version);
+      },
+      onSessionsReceived: (sessions) => {
+        setAvailableSessions(sessions);
+        // Auto-join matching session
+        if (!sessionId && account && sessions.length > 0) {
+          const match = sessions.find((session) =>
             session.participants?.some(
               (participant) => participant.toLowerCase() === account.toLowerCase()
             )
           );
           if (match) {
-            void joinSession(match);
+            void app.joinSession(match).then(() => {
+              setSessionId(match.appSessionId as `0x${string}`);
+              setSessionParticipants(match.participants ?? []);
+              setParticipantsInput(match.participants?.join(", ") ?? "");
+              applySessionData(match.sessionData);
+            });
           }
         }
-        return;
-      }
+      },
+      onSessionDefinition: (participants) => {
+        setSessionParticipants(participants);
+        setParticipantsInput(participants.join(", "));
+      },
+      onSessionUpdate: (sessionData, version) => {
+        console.log("Session update:", version);
+        applySessionData(sessionData);
+      },
+      onMessage: handleYellowMessage,
+      onError: setRoomError,
+    });
 
-      if (parsed?.method === RPCMethod.GetAppDefinition) {
-        const definition = parsed.params;
-        if (definition?.participants) {
-          setSessionParticipants(definition.participants);
-          setParticipantsInput(definition.participants.join(", "));
-        }
-        return;
-      }
+    yellowAppRef.current = app;
+    app.connect();
+  }, [signer, account, connect, sessionId, applySessionData, handleYellowMessage]);
 
-      if (parsed?.method === RPCMethod.AppSessionUpdate) {
-        if (parsed.params?.sessionData) {
-          applySessionData(parsed.params.sessionData);
-        }
-        if (typeof parsed.params?.version === "number") {
-          appStateVersionRef.current = parsed.params.version;
-        }
-        return;
-      }
+  const joinSession = useCallback(
+    async (session: YellowSessionInfo) => {
+      const app = yellowAppRef.current;
+      if (!app) return;
 
-      if (parsed?.method === RPCMethod.Message) {
-        handleYellowMessage(parsed.params);
-        return;
-      }
-
-      if (parsed?.type || parsed?.data) {
-        handleYellowMessage(parsed);
-      }
-    };
-  }, [
-    signer,
-    connect,
-    handleYellowMessage,
-    applySessionData,
-    account,
-    sessionId,
-    joinSession,
-    ensureAuth,
-  ]);
+      await app.joinSession(session);
+      setSessionId(session.appSessionId as `0x${string}`);
+      setSessionParticipants(session.participants ?? []);
+      setParticipantsInput(session.participants?.join(", ") ?? "");
+      applySessionData(session.sessionData);
+    },
+    [applySessionData]
+  );
 
   const createRoomSession = useCallback(async () => {
     setRoomError(null);
-    if (!signer) {
+    if (!signer || !account) {
       await connect();
       return;
     }
 
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+    const app = yellowAppRef.current;
+    if (!app || !app.isConnected) {
       await connectYellow();
       return;
     }
-    if (authStatus !== "authenticated") {
-      await ensureAuth();
+    if (!app.isAuthenticated) {
+      // Wait for auth - the connect flow handles this automatically
       return;
     }
 
@@ -525,58 +318,29 @@ const CreateProjectPage = () => {
       return;
     }
 
-    const weightBase = Math.floor(100 / participants.length);
-    const weights = participants.map(() => weightBase);
-    const remainder = 100 - weightBase * participants.length;
-    if (remainder > 0) {
-      weights[weights.length - 1] += remainder;
-    }
-
-    const appDefinition = {
-      protocol: YELLOW_PROTOCOL,
-      participants,
-      weights,
-      quorum: 100,
-      challenge: 0,
-      nonce: nonceValue,
-    };
-
-    const allocations = participants.map((participant) => ({
-      participant,
-      asset: YELLOW_ASSET,
-      amount: "0",
-    }));
-
-    const messageSigner = getSessionSigner();
-    const sessionMessage = await createAppSessionMessage(messageSigner, {
-      definition: appDefinition,
-      allocations,
-      session_data: JSON.stringify(collaborationState),
-    });
-    wsRef.current.send(sessionMessage);
+    await app.createSession(
+      participants as Address[],
+      nonceValue,
+      collaborationState
+    );
     setSessionParticipants(participants);
-    appStateVersionRef.current = 0;
   }, [
     signer,
+    account,
     connect,
     connectYellow,
     getParticipants,
     roomNonce,
     collaborationState,
-    getSessionSigner,
-    authStatus,
-    ensureAuth,
   ]);
 
   const sendRoomMessage = useCallback(
     async (type: RoomMessage["type"], data: unknown) => {
-      if (!signer || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || !sessionId) {
+      const app = yellowAppRef.current;
+      if (!app || !app.isConnected || !app.isAuthenticated || !sessionId) {
         return;
       }
-      if (authStatus !== "authenticated") {
-        await ensureAuth();
-        return;
-      }
+
       const id = `${Date.now()}-${nextMessageIdRef.current++}`;
       const payload = {
         type,
@@ -585,14 +349,13 @@ const CreateProjectPage = () => {
         timestamp: Date.now(),
         id,
       };
-      const messageSigner = getSessionSigner();
-      const message = await createApplicationMessage(messageSigner, sessionId, payload);
-      wsRef.current.send(message);
+      await app.sendApplicationMessage(payload);
       return id;
     },
-    [signer, sessionId, account, getSessionSigner, authStatus, ensureAuth]
+    [sessionId, account]
   );
 
+  // Broadcast state changes to other participants
   useEffect(() => {
     if (!sessionId || yellowStatus !== "connected") return;
     if (suppressBroadcastRef.current) {
@@ -605,34 +368,21 @@ const CreateProjectPage = () => {
     return () => window.clearTimeout(handle);
   }, [collaborationState, sendRoomMessage, sessionId, yellowStatus]);
 
+  // Submit state to Yellow Network
   useEffect(() => {
     if (!sessionId || yellowStatus !== "connected") return;
     if (authStatus !== "authenticated") return;
     if (suppressBroadcastRef.current) return;
     if (sessionParticipants.length === 0) return;
+
+    const app = yellowAppRef.current;
+    if (!app) return;
+
     const handle = window.setTimeout(async () => {
-      const allocations = sessionParticipants.map((participant) => ({
-        participant,
-        asset: YELLOW_ASSET,
-        amount: "0",
-      }));
-      const messageSigner = getSessionSigner();
-      if (!signer) return;
-      const nextVersion = appStateVersionRef.current + 1;
-      const message = await createSubmitAppStateMessage(
-        messageSigner,
-        {
-          app_session_id: sessionId,
-          intent: RPCAppStateIntent.Operate,
-          version: nextVersion,
-          allocations,
-          session_data: JSON.stringify(collaborationState),
-        },
-        undefined,
-        undefined
+      await app.submitState(
+        sessionParticipants as Address[],
+        collaborationState
       );
-      wsRef.current?.send(message);
-      appStateVersionRef.current = nextVersion;
     }, 700);
     return () => window.clearTimeout(handle);
   }, [
@@ -640,13 +390,11 @@ const CreateProjectPage = () => {
     sessionId,
     yellowStatus,
     sessionParticipants,
-    signer,
-    getSessionSigner,
     authStatus,
   ]);
 
-  const submitChat = useCallback(
-    async (event: React.FormEvent) => {
+  const submitChat: React.SubmitEventHandler<HTMLFormElement> = useCallback(
+    async (event) => {
       event.preventDefault();
       const text = chatInput.trim();
       if (!text) return;
@@ -670,33 +418,29 @@ const CreateProjectPage = () => {
 
   const refreshSessions = useCallback(async () => {
     setRoomError(null);
-    if (!signer) {
+    if (!signer || !account) {
       await connect();
       return;
     }
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+
+    const app = yellowAppRef.current;
+    if (!app || !app.isConnected) {
       await connectYellow();
       return;
     }
-    if (authStatus !== "authenticated") {
-      await ensureAuth();
+    if (!app.isAuthenticated) {
       return;
     }
-    if (!account) {
-      setRoomError("Connect a wallet to list sessions");
-      return;
-    }
-    const messageSigner = getSessionSigner();
-    const request = await createGetAppSessionsMessage(messageSigner, account);
-    wsRef.current.send(request);
-  }, [signer, connect, connectYellow, account, getSessionSigner, authStatus, ensureAuth]);
 
+    await app.refreshSessions();
+  }, [signer, account, connect, connectYellow]);
+
+  // Refresh sessions when authenticated
   useEffect(() => {
     if (!account || yellowStatus !== "connected") return;
     if (authStatus !== "authenticated") return;
     void refreshSessions();
   }, [account, yellowStatus, authStatus, refreshSessions]);
-
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
