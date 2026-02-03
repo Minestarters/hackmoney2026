@@ -2,14 +2,19 @@ export const FACTORY_ADDRESS = import.meta.env.VITE_FACTORY_ADDRESS || "";
 export const USDC_ADDRESS = import.meta.env.VITE_USDC_ADDRESS || "";
 export const RPC_URL = import.meta.env.VITE_RPC_URL || "http://localhost:8545";
 export const EXPLORER_URL = import.meta.env.VITE_EXPLORER_URL || "";
+export const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1740165/minestarters-hackmoney/version/latest";
 export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
 
 const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",
   11155111: "https://sepolia.etherscan.io",
+  5042002: "https://explorer.arctest.net", // Arc Testnet
 };
 
-const FALLBACK_CHAIN_ID = 11155111;
+export const FALLBACK_CHAIN_ID = 5042002;
+
+// Arc Testnet Chain ID for BridgeKit comparison
+export const ARC_TESTNET_CHAIN_ID = 5042002;
 
 const normalizeChainId = (chainId?: number | bigint | null) => {
   if (typeof chainId === "bigint") {

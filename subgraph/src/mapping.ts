@@ -87,7 +87,7 @@ export function handleTransfer(event: Transfer): void {
       holder.initialDepositChain = BigInt.fromI32(0)
 
       let contract = BasketShareTokenContract.bind(event.address)
-      let vaultAddress = contract.try_vault()
+      let vaultAddress = contract.try_VAULT()
       if (!vaultAddress.reverted) {
         holder.project = vaultAddress.value.toHexString()
       } else {

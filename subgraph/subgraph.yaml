@@ -6,7 +6,7 @@ dataSources:
     name: MinestartersFactory
     network: arc-testnet
     source:
-      address: "0x1dE3AbE178240f0565A4d6ecAdc7e2986B6E13e3"
+      address: "0x523faDa2A3ee98D8069928c3CB5aB94bb65e91A8"
       abi: MinestartersFactory
       startBlock: 25159481
     mapping:

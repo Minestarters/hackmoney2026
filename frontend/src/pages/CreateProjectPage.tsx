@@ -32,7 +32,9 @@ const CreateProjectPage = () => {
   const { signer, connect, account } = useWallet();
   const [projectName, setProjectName] = useState("");
   const [minimumRaise, setMinimumRaise] = useState("1000");
-  const [deadline, setDeadline] = useState(() => toDateInputValue(addDays(new Date(), 30)));
+  const [deadline, setDeadline] = useState(() =>
+    toDateInputValue(addDays(new Date(), 30)),
+  );
   const [raiseFeePct, setRaiseFeePct] = useState("0.05");
   const [withdrawAddress, setWithdrawAddress] = useState("");
   const [companies, setCompanies] = useState<CompanyInput[]>([
@@ -48,11 +50,17 @@ const CreateProjectPage = () => {
     }
   }, [account, withdrawAddress]);
 
-  const handleCompanyChange = (index: number, field: keyof CompanyInput, value: string) => {
+  const handleCompanyChange = (
+    index: number,
+    field: keyof CompanyInput,
+    value: string,
+  ) => {
     setCompanies((prev) =>
       prev.map((entry, i) =>
-        i === index ? { ...entry, [field]: field === "weight" ? Number(value) : value } : entry
-      )
+        i === index
+          ? { ...entry, [field]: field === "weight" ? Number(value) : value }
+          : entry,
+      ),
     );
   };
 
@@ -82,7 +90,11 @@ const CreateProjectPage = () => {
 
     try {
       setSubmitting(true);
-      const factory = new Contract(FACTORY_ADDRESS, minestartersFactoryAbi, signer);
+      const factory = new Contract(
+        FACTORY_ADDRESS,
+        minestartersFactoryAbi,
+        signer,
+      );
       const minRaise = parseUnits(minimumRaise || "0", 6);
       const deadlineTs = dateInputValueToUnixSeconds(deadline);
       if (!Number.isFinite(deadlineTs)) {
@@ -90,7 +102,9 @@ const CreateProjectPage = () => {
         setSubmitting(false);
         return;
       }
-      const raiseFeeBps = Math.round((parseFloat(raiseFeePct || "0") || 0) * 100);
+      const raiseFeeBps = Math.round(
+        (parseFloat(raiseFeePct || "0") || 0) * 100,
+      );
 
       if (raiseFeeBps > 10_000) {
         setMessage("Fees cannot exceed 100%");
@@ -105,7 +119,7 @@ const CreateProjectPage = () => {
         minRaise,
         deadlineTs,
         withdrawAddress,
-        raiseFeeBps
+        raiseFeeBps,
       );
 
       await tx.wait();
@@ -179,7 +193,11 @@ const CreateProjectPage = () => {
         <div className="rounded border-4 border-dirt p-3">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-stone-300">Companies & weights</p>
-            <button type="button" onClick={addCompanyRow} className="button-blocky rounded px-3 py-1">
+            <button
+              type="button"
+              onClick={addCompanyRow}
+              className="button-blocky rounded px-3 py-1"
+            >
               Add Row
             </button>
           </div>
@@ -189,7 +207,9 @@ const CreateProjectPage = () => {
                 <input
                   className="input-blocky col-span-4 rounded px-3 py-2"
                   value={company.name}
-                  onChange={(e) => handleCompanyChange(idx, "name", e.target.value)}
+                  onChange={(e) =>
+                    handleCompanyChange(idx, "name", e.target.value)
+                  }
                   placeholder={`Company ${idx + 1}`}
                   required
                 />
@@ -199,14 +219,17 @@ const CreateProjectPage = () => {
                   value={company.weight}
                   min="0"
                   max="100"
-                  onChange={(e) => handleCompanyChange(idx, "weight", e.target.value)}
+                  onChange={(e) =>
+                    handleCompanyChange(idx, "weight", e.target.value)
+                  }
                   required
                 />
               </div>
             ))}
           </div>
           <p className="mt-2 text-[10px] text-stone-400">
-            Weights must sum to 100%. Fees entered as percentages (e.g. 2.5 = 2.5% = 250 bps).
+            Weights must sum to 100%. Fees entered as percentages (e.g. 2.5 =
+            2.5% = 250 bps).
           </p>
         </div>
 

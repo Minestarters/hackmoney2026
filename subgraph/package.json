@@ -4,7 +4,7 @@
   "scripts": {
     "codegen": "graph codegen",
     "build": "graph build",
-    "deploy": "graph deploy minestarters-hackmoney-1",
+    "deploy": "graph deploy --studio minestarters-hackmoney",
     "create-local": "graph create --node http://localhost:8020/ minestarters/hackmoney2026",
     "remove-local": "graph remove --node http://localhost:8020/ minestarters/hackmoney2026",
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 minestarters/hackmoney2026"

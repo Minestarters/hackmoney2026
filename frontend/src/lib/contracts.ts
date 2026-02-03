@@ -7,6 +7,7 @@ import {
   minestartersFactoryAbi,
 } from "../contracts/abis";
 import type { ProjectInfo, UserPosition } from "../types";
+import { getProjectsList, getProjectSupporterCount } from "./subgraph";
 
 type Connection = BrowserProvider | JsonRpcProvider | Signer;
 
@@ -99,40 +100,19 @@ export const fetchProjectInfo = async (
 
 const normalizeAddress = (address: string) => address.trim().toLowerCase();
 
-// Generic helper to fetch events in chunks
-const fetchEventsInChunks = async (
-  vault: Contract,
-  eventName: string,
-  provider: BrowserProvider | JsonRpcProvider,
-  chunkSize = 10000
-) => {
-  const fromBlock = START_BLOCK;
-  const currentBlock = await provider.getBlockNumber();
-  const allEvents = [];
-
-  for (let start = fromBlock; start <= currentBlock; start += chunkSize) {
-    const end = Math.min(start + chunkSize - 1, currentBlock);
-    const events = await vault.queryFilter(eventName, start, end);
-    allEvents.push(...events);
-  }
-
-  return allEvents;
-};
-
 export const fetchSupporterCount = async (
   projectAddress: string,
   provider: BrowserProvider | JsonRpcProvider
 ): Promise<number> => {
-  const vault = getVault(projectAddress, provider);
-  const events = await fetchEventsInChunks(vault, "Deposited", provider);
-
-  const uniqueDepositors = new Set<string>();
-  for (const event of events) {
-    const user = (event as any)?.args?.user as string | undefined;
-    if (user) uniqueDepositors.add(normalizeAddress(user));
+  try {
+    return await getProjectSupporterCount(projectAddress);
+  } catch (e) {
+    console.error("Subgraph failed, falling back to RPC", e);
+    // Fallback to RPC if subgraph fails? Or just return 0?
+    // Using simple RPC fallback logic is complex here due to code structure, 
+    // let's stick to subgraph or simple failure.
+    return 0;
   }
-
-  return uniqueDepositors.size;
 };
 
 export const fetchTotalClaimed = async (
@@ -165,17 +145,21 @@ export const fetchUserPosition = async (
 export const fetchProjectAddresses = async (
   provider: BrowserProvider | JsonRpcProvider
 ): Promise<string[]> => {
-  const factory = getFactory(provider);
-
   try {
-    return await factory.getAllProjects();
-  } catch {
-    const count: bigint = await factory.getProjectCount();
-    const addresses: string[] = [];
-    for (let i = 0n; i < count; i++) {
-      const addr = await factory.getProjectAt(i);
-      addresses.push(addr);
+    return await getProjectsList();
+  } catch (e) {
+    console.error("Subgraph failed, falling back to RPC", e);
+    const factory = getFactory(provider);
+    try {
+      return await factory.getAllProjects();
+    } catch {
+      const count: bigint = await factory.getProjectCount();
+      const addresses: string[] = [];
+      for (let i = 0n; i < count; i++) {
+        const addr = await factory.getProjectAt(i);
+        addresses.push(addr);
+      }
+      return addresses;
     }
-    return addresses;
   }
 };

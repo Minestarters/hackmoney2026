@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: ISC
 pragma solidity ^0.8.24;
 
-import "forge-std/Script.sol";
-import "../src/MockUSDC.sol";
+import {Script, console} from "forge-std/Script.sol";
+import {MockUSDC} from "../src/MockUSDC.sol";
 
 contract DeployUSDC is Script {
     function run() external {

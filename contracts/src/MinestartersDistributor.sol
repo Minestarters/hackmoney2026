@@ -7,13 +7,13 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @title MinestartersDistributor
 /// @notice Distributes profit payouts on destination chains.
 contract MinestartersDistributor is Ownable {
-    IERC20 public immutable usdc;
+    IERC20 public immutable USDC;
 
     event Payout(address indexed recipient, uint256 amount);
 
     constructor(address usdcToken, address initialOwner) Ownable(initialOwner) {
         require(usdcToken != address(0), "USDC required");
-        usdc = IERC20(usdcToken);
+        USDC = IERC20(usdcToken);
     }
 
     /// @notice Distributes USDC to multiple recipients.
@@ -31,7 +31,7 @@ contract MinestartersDistributor is Ownable {
             
             if (amount > 0) {
                 // Transfer USDC from owner to recipient
-                bool success = usdc.transferFrom(msg.sender, recipient, amount);
+                bool success = USDC.transferFrom(msg.sender, recipient, amount);
                 require(success, "Transfer failed");
                 emit Payout(recipient, amount);
             }

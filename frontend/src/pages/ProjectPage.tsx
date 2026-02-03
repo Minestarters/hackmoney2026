@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { parseUnits } from "ethers";
+import { formatUnits, parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
+import BridgeKitModal from "../components/BridgeKitModal";
 import {
   EXPLORER_URL,
   STAGE_LABELS,
@@ -141,21 +142,18 @@ const IconFee = (props: React.SVGProps<SVGSVGElement>) => (
 
 const ProjectPage = () => {
   const { address } = useParams<{ address: string }>();
-  const { provider, signer, account, connect } =
-    useWallet();
+  const { provider, signer, account, connect } = useWallet();
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [position, setPosition] = useState<UserPosition | null>(null);
   const [supportCount, setSupportCount] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"investor" | "spv">("investor");
-  const [amount, setAmount] = useState("0");
   const [loading, setLoading] = useState(false);
+  const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [explorerBaseUrl, setExplorerBaseUrl] = useState(() =>
     sanitizeExplorerUrl(getExplorerUrl()),
   );
-  const profitsOpen = project
-    ? project.totalRaised >= project.minimumRaise
-    : false;
 
   const countdown = useMemo(() => {
     if (!project) return "";
@@ -267,99 +265,55 @@ const ProjectPage = () => {
     };
   }, [account, project, provider]);
 
-  const handleDeposit = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
-      return;
-    }
-    if (project.stage === 2) {
-      toast.error("Fundraise closed");
-      return;
-    }
-    if (!USDC_ADDRESS) {
-      toast.error("Set VITE_USDC_ADDRESS for deposits");
-      return;
-    }
-    try {
-      const value = parseUnits(amount || "0", 6);
-      const usdc = getUsdc(signer);
-      const owner = await signer.getAddress();
-      const balance: bigint = await usdc.balanceOf(owner);
-      if (balance < value) {
-        toast.error(
-          `Insufficient USDC balance. You have ${formatUsdc(balance)} but need ${formatUsdc(value)}`,
-        );
-        return;
-      }
-      const allowance: bigint = await usdc.allowance(owner, project.address);
-      if (allowance < value) {
-        await toast.promise(
-          usdc.approve(project.address, value).then((tx) => tx.wait()),
-          {
-            loading: "Approving USDC...",
-            success: "USDC approved",
-            error: (error) => {
-              markErrorHandled(error);
-              return `Approval failed: ${getRevertMessage(error)}`;
-            },
-          },
-        );
-      }
-
-      const vault = getVault(project.address, signer);
-      await toast.promise(
-        vault.deposit(value).then((tx) => tx.wait()),
-        {
-          loading: "Depositing...",
-          success: "Deposit confirmed",
-          error: (error) => {
-            markErrorHandled(error);
-            return `Deposit failed: ${getRevertMessage(error)}`;
-          },
-        },
-      );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Deposit failed: ${getRevertMessage(error)}`);
-      }
-    }
+  const handleDepositComplete = async () => {
+    await reloadProjectData();
+    setIsBridgeModalOpen(false);
   };
 
-  const handleClaim = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
-      return;
+  const handleDepositContract = async (
+    amountStr: string,
+    chainId: number | bigint,
+  ) => {
+    if (!project || !signer) return;
+
+    const value = parseUnits(amountStr || "0", 6);
+    const usdc = getUsdc(signer);
+    const owner = await signer.getAddress();
+    const balance: bigint = await usdc.balanceOf(owner);
+
+    if (balance < value) {
+      const msg = `Insufficient USDC balance. You have ${formatUsdc(balance)} but need ${formatUsdc(value)}`;
+      toast.error(msg);
+      throw new Error(msg);
     }
-    if (!profitsOpen) {
-      toast.error(
-        "Project must reach the minimum raise before claiming profits",
-      );
-      return;
-    }
-    try {
-      const vault = getVault(project.address, signer);
+
+    const allowance: bigint = await usdc.allowance(owner, project.address);
+    if (allowance < value) {
       await toast.promise(
-        vault.claimProfit().then((tx) => tx.wait()),
+        usdc.approve(project.address, value).then((tx) => tx.wait()),
         {
-          loading: "Claiming profits...",
-          success: "Profits claimed",
+          loading: "Approving USDC...",
+          success: "USDC approved",
           error: (error) => {
             markErrorHandled(error);
-            return `Claim failed: ${getRevertMessage(error)}`;
+            return `Approval failed: ${getRevertMessage(error)}`;
           },
         },
       );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Claim failed: ${getRevertMessage(error)}`);
-      }
     }
+
+    const vault = getVault(project.address, signer);
+    await toast.promise(
+      vault.deposit(value, chainId).then((tx) => tx.wait()),
+      {
+        loading: "Depositing...",
+        success: "Deposit confirmed",
+        error: (error) => {
+          markErrorHandled(error);
+          return `Deposit failed: ${getRevertMessage(error)}`;
+        },
+      },
+    );
   };
 
   const handleRefund = async () => {
@@ -390,36 +344,25 @@ const ProjectPage = () => {
     }
   };
 
-  const handleWithdrawRaised = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
-      return;
-    }
-    if (!canWithdrawRaised) {
-      toast.error("No withdrawable funds available");
-      return;
-    }
-    try {
-      const vault = getVault(project.address, signer);
-      await toast.promise(
-        vault.withdrawRaisedFunds().then((tx) => tx.wait()),
-        {
-          loading: "Withdrawing raised funds...",
-          success: "Raised funds withdrawn",
-          error: (error) => {
-            markErrorHandled(error);
-            return `Withdraw failed: ${getRevertMessage(error)}`;
-          },
+  const handleWithdrawComplete = async () => {
+    await reloadProjectData();
+    setIsWithdrawModalOpen(false);
+  };
+
+  const handleWithdrawContract = async () => {
+    if (!project || !signer) return;
+    const vault = getVault(project.address, signer);
+    await toast.promise(
+      vault.withdrawRaisedFunds().then((tx) => tx.wait()),
+      {
+        loading: "Withdrawing raised funds...",
+        success: "Raised funds withdrawn",
+        error: (error) => {
+          markErrorHandled(error);
+          return `Withdraw failed: ${getRevertMessage(error)}`;
         },
-      );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Withdraw failed: ${getRevertMessage(error)}`);
-      }
-    }
+      },
+    );
   };
 
   if (!address) {
@@ -680,15 +623,8 @@ const ProjectPage = () => {
             <div className="space-y-4">
               <div className="rounded border-4 border-dirt bg-night/40 p-3">
                 <p className="mb-2 text-[10px] text-stone-400">Deposit USDC</p>
-                <input
-                  className="input-blocky mb-3 w-full rounded px-3 py-2 text-xs"
-                  type="number"
-                  min="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
                 <button
-                  onClick={handleDeposit}
+                  onClick={() => setIsBridgeModalOpen(true)}
                   className="button-blocky w-full rounded px-3 py-2 text-[11px] uppercase"
                 >
                   Deposit
@@ -723,7 +659,7 @@ const ProjectPage = () => {
                     </p>
                   </div>
                   <button
-                    onClick={handleWithdrawRaised}
+                    onClick={() => setIsWithdrawModalOpen(true)}
                     disabled={!canWithdrawRaised}
                     className="button-blocky rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -785,6 +721,30 @@ const ProjectPage = () => {
           </div>
         </div>
       </div>
+
+      <BridgeKitModal
+        isOpen={isBridgeModalOpen}
+        onClose={() => setIsBridgeModalOpen(false)}
+        project={project}
+        onComplete={handleDepositComplete}
+        ctaLabel="Deposit"
+        bridgeMode="before"
+        showAmount={true}
+        initialAmount="0"
+        onContractMethod={handleDepositContract}
+      />
+
+      <BridgeKitModal
+        isOpen={isWithdrawModalOpen}
+        onClose={() => setIsWithdrawModalOpen(false)}
+        project={project}
+        onComplete={handleWithdrawComplete}
+        ctaLabel="Withdraw"
+        bridgeMode="after"
+        initialAmount={formatUnits(withdrawPrincipal, 6)}
+        showAmount={false}
+        onContractMethod={handleWithdrawContract}
+      />
     </div>
   );
 };
