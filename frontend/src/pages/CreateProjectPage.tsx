@@ -11,8 +11,6 @@ import {
   type ProjectFormFields,
 } from "../lib/yellowSession";
 
-type CompanyInput = { name: string; weight: number };
-
 // Helper to calculate weights from basket stakes
 const calculateWeightsFromBasket = (basket: BasketState): { name: string; weight: number }[] => {
   const totalStakes: Record<string, number> = {};
