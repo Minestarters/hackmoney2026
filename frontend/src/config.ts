@@ -38,6 +38,11 @@ export const getExplorerUrl = (chainId?: number | bigint | null) => {
   return DEFAULT_CHAIN_EXPLORERS[FALLBACK_CHAIN_ID];
 };
 
+export const DISTRIBUTOR_ADDRESSES: Record<number, string> = {
+  5042002: "0x7916aa2b4E351bD3Da48B3BF04a53e4C90e8203f", // Example Arc Testnet address
+  11155111: "0x088F82f3d1aEd9854620c4C3b9d0284d14a54027", // Example Sepolia address
+};
+
 export const STAGE_LABELS: Record<number, string> = {
   0: "Active",
   1: "Active",

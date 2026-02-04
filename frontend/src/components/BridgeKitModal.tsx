@@ -34,6 +34,7 @@ import {
 import { createEthersAdapterFromProvider } from "@circle-fin/adapter-ethers-v6";
 import {
   BRIDGEKIT_SUPPORTED_TESTNETS,
+  getChainIcon,
   type ChainInfo,
 } from "../lib/bridgeChains";
 import { USDC_ADDRESS, ARC_TESTNET_CHAIN_ID } from "../config";
@@ -110,33 +111,6 @@ const getRevertMessage = (error: unknown) => {
     return trimmed.length > 0 ? trimmed : "Transaction reverted";
   }
   return raw;
-};
-
-const getChainIcon = (chainName: string) => {
-  const icons: Record<string, string> = {
-    "Arc Testnet": "⚡",
-    "Ethereum Sepolia": "Ξ",
-    "Base Sepolia": "🔵",
-    "Arbitrum Sepolia": "🔷",
-    "OP Sepolia": "🔴",
-    "Avalanche Fuji": "🔺",
-    "Polygon PoS Amoy": "🟣",
-    "Celo Sepolia": "🟡",
-    "Linea Sepolia": "━",
-    "Unichain Sepolia": "🦄",
-    "World Chain Sepolia": "🌍",
-    "ZKsync Era Testnet": "⚡",
-    "Sonic Testnet": "🎵",
-    "Sonic Blaze Testnet": "🔥",
-    "XDC Apothem": "💎",
-    "Sei Testnet": "⚡",
-    "Plume Testnet": "🪶",
-    "Monad Testnet": "━",
-    "HyperEVM Testnet": "━",
-    "Ink Testnet": "━",
-    "Codex Testnet": "━",
-  };
-  return icons[chainName] || "━";
 };
 
 const BridgeKitModal = ({

@@ -4,6 +4,7 @@ import { formatUnits, parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
 import BridgeKitModal from "../components/BridgeKitModal";
+import DistributeProfitModal from "../components/DistributeProfitModal";
 import {
   EXPLORER_URL,
   STAGE_LABELS,
@@ -149,10 +150,15 @@ const ProjectPage = () => {
   const [loading, setLoading] = useState(false);
   const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [isDistributeProfitModalOpen, setIsDistributeProfitModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [explorerBaseUrl, setExplorerBaseUrl] = useState(() =>
     sanitizeExplorerUrl(getExplorerUrl()),
   );
+
+  const profitsOpen = project
+    ? project.totalRaised >= project.minimumRaise
+    : false;
 
   const countdown = useMemo(() => {
     if (!project) return "";
@@ -669,6 +675,20 @@ const ProjectPage = () => {
                   Creator Fee: {formatUsdc(withdrawFees)} USDC
                 </p>
               </div>
+
+              <div className="rounded border-4 border-dirt bg-night/40 p-3">
+                <p className="mb-2 text-[10px] text-stone-400">
+                  Distribute Profit
+                </p>
+                
+                <button
+                  onClick={() => setIsDistributeProfitModalOpen(true)}
+                  disabled={!profitsOpen}
+                  className="button-blocky w-full rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Distribute Profit
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -744,6 +764,14 @@ const ProjectPage = () => {
         showAmount={false}
         onContractMethod={handleWithdrawContract}
       />
+
+      {project && (
+        <DistributeProfitModal
+          isOpen={isDistributeProfitModalOpen}
+          onClose={() => setIsDistributeProfitModalOpen(false)}
+          project={project}
+        />
+      )}
     </div>
   );
 };

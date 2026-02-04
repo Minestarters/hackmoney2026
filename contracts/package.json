@@ -12,6 +12,8 @@
     "compile": "forge build",
     "test": "forge test",
     "test:verbose": "forge test -vvv",
+    "deploy:distributor:arc": "source .env && forge script scripts/DeployMinestartersDistributor.s.sol --rpc-url arc-testnet --broadcast --verify --verifier blockscout --verifier-url 'https://testnet.arcscan.app/api/'",
+    "deploy:distributor:sepolia": "source .env && forge script scripts/DeployMinestartersDistributor.s.sol --rpc-url sepolia --broadcast --verify",
     "deploy:usdc": "source .env && forge script scripts/DeployUSDC.s.sol --rpc-url arc-testnet --broadcast --verify --verifier blockscout --verifier-url 'https://testnet.arcscan.app/api/'",
     "deploy:factory": "source .env && forge script scripts/DeployFactory.s.sol --rpc-url arc-testnet --broadcast --verify --verifier blockscout --verifier-url 'https://testnet.arcscan.app/api/'",
     "deploy:usdc:dry": "source .env && forge script scripts/DeployUSDC.s.sol --rpc-url arc-testnet",

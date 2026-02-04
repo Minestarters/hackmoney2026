@@ -1,6 +1,7 @@
 import basketShareTokenAbi from "./BasketShareToken.json";
 import basketVaultAbi from "./BasketVault.json";
 import minestartersFactoryAbi from "./MinestartersFactory.json";
+import minestartersDistributor from "./MinestartersDistributor.json";
 
 
 const erc20Abi = [
@@ -57,4 +58,4 @@ const erc20Abi = [
   },
 ] as const;
 
-export { basketVaultAbi, basketShareTokenAbi, minestartersFactoryAbi, erc20Abi }
+export { basketVaultAbi, basketShareTokenAbi, minestartersFactoryAbi, minestartersDistributor, erc20Abi }
