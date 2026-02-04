@@ -25,6 +25,8 @@ contract NAVEngine is Ownable {
     uint16 public constant DEFAULT_K_CONSTRUCTION = 7000;
     uint16 public constant DEFAULT_K_PRODUCTION = 9000;
 
+    address public factory;
+
     enum Stage {
         Exploration,
         Permits,
@@ -56,6 +58,7 @@ contract NAVEngine is Ownable {
 
     mapping(address => Vault) public vaults;
     mapping(address => mapping(uint256 => Company)) public companies;
+    mapping(address => address) public vaultCreators;
 
     uint256 public goldPriceUsd;
     address public oracle;
@@ -66,8 +69,7 @@ contract NAVEngine is Ownable {
     event CompanyUpdated(address indexed vault, uint256 indexed companyIndex);
     event PriceUpdated(uint256 newPrice);
 
-    constructor(uint256 _initialGoldPrice, address _oracle) Ownable(msg.sender) {
-        goldPriceUsd = _initialGoldPrice;
+    constructor(address _oracle, address _owner) Ownable(_owner) {
         oracle = _oracle == address(0) ? msg.sender : _oracle;
     }
 
@@ -95,6 +97,10 @@ contract NAVEngine is Ownable {
         Company memory c = companies[vault][companyIndex];
         if (!c.registered) revert CompanyNotRegistered();
         return (c.name, c.weight, c.totalResourceTonnes, c.inventoryTonnes, c.currentStage, _calculateCompanyNAV(c));
+    }
+
+    function setFactory(address _factory) external onlyOwner {
+        factory = _factory;
     }
 
     function _calculateBasketNAV(address vault, uint256 companyCount) internal view returns (uint256 totalNav) {
@@ -148,8 +154,10 @@ contract NAVEngine is Ownable {
         return c.kProduction;
     }
 
-    function registerVault(address vault, uint256 tokenSupply) external onlyOwner {
+    function registerVault(address vault, uint256 tokenSupply, address creator) external {
+        if (msg.sender != factory && msg.sender != owner()) revert Unauthorized();
         vaults[vault] = Vault({companyCount: 0, registered: true});
+        vaultCreators[vault] = creator;
         emit VaultRegistered(vault, tokenSupply);
     }
 
@@ -163,7 +171,7 @@ contract NAVEngine is Ownable {
         uint256 mineLifeYears,
         uint256 discountRateBps,
         uint256 floorNavUsd
-    ) external onlyOwner {
+    ) external {
         Vault storage v = vaults[vault];
         if (!v.registered) revert ProjectNotRegistered();
 
@@ -188,7 +196,8 @@ contract NAVEngine is Ownable {
         emit CompanyRegistered(vault, v.companyCount - 1, name);
     }
 
-    function advanceCompanyStage(address vault, uint256 companyIndex) external onlyOwner {
+    function advanceCompanyStage(address vault, uint256 companyIndex) external {
+        if (vaultCreators[vault] != msg.sender && msg.sender != owner()) revert Unauthorized();
         Company storage c = companies[vault][companyIndex];
         if (!c.registered) revert CompanyNotRegistered();
         if (uint8(c.currentStage) >= 3) revert AlreadyProduction();
@@ -208,7 +217,8 @@ contract NAVEngine is Ownable {
         uint16 kPermits,
         uint16 kConstruction,
         uint16 kProduction
-    ) external onlyOwner {
+    ) external {
+        if (vaultCreators[vault] != msg.sender && msg.sender != owner()) revert Unauthorized();
         Company storage c = companies[vault][companyIndex];
         if (!c.registered) revert CompanyNotRegistered();
 
@@ -224,7 +234,8 @@ contract NAVEngine is Ownable {
         emit CompanyUpdated(vault, companyIndex);
     }
 
-    function updateInventory(address vault, uint256 companyIndex, uint128 tonnes) external onlyOwner {
+    function updateInventory(address vault, uint256 companyIndex, uint128 tonnes) external {
+        if (vaultCreators[vault] != msg.sender && msg.sender != owner()) revert Unauthorized();
         Company storage c = companies[vault][companyIndex];
         if (!c.registered) revert CompanyNotRegistered();
         if (c.currentStage != Stage.Production) revert NotInProduction();

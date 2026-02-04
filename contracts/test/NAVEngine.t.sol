@@ -16,11 +16,12 @@ contract NAVEngineTest is Test {
     uint256 public constant GOLD_PRICE = 2000e6;
 
     function setUp() public {
-        navEngine = new NAVEngine(GOLD_PRICE, oracle);
+        navEngine = new NAVEngine(oracle, address(this));
+        navEngine.updateGoldPrice(GOLD_PRICE);
     }
 
     function test_RegisterCompany() public {
-        navEngine.registerVault(vault, 1_000_000);
+        navEngine.registerVault(vault, 1_000_000, address(this));
 
         navEngine.registerCompany(vault, "Golden Mountain Mining", 100, 10, 9000, 5, 20, 1000, 1e6);
 
@@ -32,7 +33,7 @@ contract NAVEngineTest is Test {
 
 
     function test_PermitsNAV() public {
-        navEngine.registerVault(vault, 1_000_000);
+        navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
 
         navEngine.advanceCompanyStage(vault, 0);
@@ -63,7 +64,7 @@ contract NAVEngineTest is Test {
         uint256 totalShares = IERC20(realVault.shareToken()).totalSupply();
         assertEq(totalShares, 1_000_000, "Should have 1M shares");
         
-        navEngine.registerVault(address(realVault), totalShares);
+        navEngine.registerVault(address(realVault), totalShares, address(this));
         navEngine.registerCompany(address(realVault), "Alpha", 60, 10, 9000, 5, 20, 1000, 1_000_000e6);
         navEngine.registerCompany(address(realVault), "Beta", 40, 5, 8500, 3, 15, 1200, 500_000e6);
 
@@ -92,7 +93,7 @@ contract NAVEngineTest is Test {
         uint256 totalShares = IERC20(realVault.shareToken()).totalSupply();
         assertEq(totalShares, 1_000_000, "Should have 1M shares");
         
-        navEngine.registerVault(address(realVault), totalShares);
+        navEngine.registerVault(address(realVault), totalShares, address(this));
         navEngine.registerCompany(address(realVault), "Test Mine", 100, 10, 9000, 5, 20, 1000, 5_000_000e6);
 
         uint256 navPerToken = navEngine.getCurrentNAV(address(realVault));
@@ -101,7 +102,7 @@ contract NAVEngineTest is Test {
     }
 
     function test_AdvanceStage() public {
-        navEngine.registerVault(vault, 1_000_000);
+        navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 6, 20, 1000, 1e6);
 
         navEngine.advanceCompanyStage(vault, 0);
@@ -110,7 +111,7 @@ contract NAVEngineTest is Test {
     }
 
     function test_RevertAdvancePastProduction() public {
-        navEngine.registerVault(vault, 1_000_000);
+        navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
 
         navEngine.advanceCompanyStage(vault, 0);
@@ -123,7 +124,7 @@ contract NAVEngineTest is Test {
 
 
     function test_RevertInventoryBeforeProduction() public {
-        navEngine.registerVault(vault, 1_000_000);
+        navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
 
         vm.expectRevert(NAVEngine.NotInProduction.selector);
@@ -131,13 +132,13 @@ contract NAVEngineTest is Test {
     }
 
     function test_DCF_YearsToProductionAffectsNAV() public {
-        navEngine.registerVault(vault, 1_000_000);
+        navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Near Term", 100, 10, 9000, 5, 20, 1000, 1e6);
         navEngine.advanceCompanyStage(vault, 0);
         (,,,,, uint256 nav5Years) = navEngine.getCompany(vault, 0);
 
         address vault2 = makeAddr("vault2");
-        navEngine.registerVault(vault2, 1_000_000);
+        navEngine.registerVault(vault2, 1_000_000, address(this));
         navEngine.registerCompany(vault2, "Far Term", 100, 10, 9000, 10, 20, 1000, 1e6);
         navEngine.advanceCompanyStage(vault2, 0);
         (,,,,, uint256 nav10Years) = navEngine.getCompany(vault2, 0);
@@ -149,7 +150,7 @@ contract NAVEngineTest is Test {
         vm.prank(oracle);
         navEngine.updateGoldPrice(4895e6);
 
-        navEngine.registerVault(vault, 1_000_000);
+        navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Gold Mine", 100, 1, 10000, 0, 20, 1000, 1e6);
         navEngine.advanceCompanyStage(vault, 0);
 
@@ -159,6 +160,32 @@ contract NAVEngineTest is Test {
         assertEq(actualNAV, expectedNAV);
     }
 
+    function test_CreatorCanAdvanceStage() public {
+        address creator = makeAddr("creator");
+        navEngine.registerVault(vault, 1_000_000, creator);
+        navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
+
+        vm.prank(creator);
+        navEngine.advanceCompanyStage(vault, 0);
+
+        (,,,, NAVEngine.Stage stage,) = navEngine.getCompany(vault, 0);
+        assertEq(uint8(stage), 1);
+    }
+
+    function test_CreatorCanUpdateInventory() public {
+        address creator = makeAddr("creator");
+        navEngine.registerVault(vault, 1_000_000, creator);
+        navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
+        navEngine.advanceCompanyStage(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0);
+
+        vm.prank(creator);
+        navEngine.updateInventory(vault, 0, 5);
+
+        (,,, uint256 inventory,,) = navEngine.getCompany(vault, 0);
+        assertEq(inventory, 5);
+    }
 
     function test_SimulateFullNAVEngineProcess() public {
         MockUSDC usdc = new MockUSDC();
@@ -207,7 +234,7 @@ contract NAVEngineTest is Test {
         assertEq(realVault.totalRaised(), 200_000e6);
         assertGt(totalShares, 0);
         
-        navEngine.registerVault(address(realVault), totalShares);
+        navEngine.registerVault(address(realVault), totalShares, address(this));
         
         navEngine.registerCompany(
             address(realVault), companyNames[0], 50, 50, 9000, 3, 15, 1000, 10_000_000e6
