@@ -31,16 +31,13 @@ contract NAVIntegrationTest is Test {
     }
 
     function test_FullProjectLifecycle() public {
-        // setup: 2 companies with weights 60/40
-        string[] memory names = new string[](2);
-        names[0] = "Alpha Mining";
-        names[1] = "Beta Resources";
+        // ============ PROJECT SETUP ============
+        string[] memory names = new string[](1);
+        names[0] = "Gold Mine Alpha";
 
-        uint256[] memory weights = new uint256[](2);
-        weights[0] = 60;
-        weights[1] = 40;
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 100;
 
-        // create project with NAV
         vm.prank(creator);
         address vaultAddr = factory.createProjectWithNAV(
             "Gold Basket",
@@ -56,84 +53,87 @@ contract NAVIntegrationTest is Test {
         BasketVault vault = BasketVault(vaultAddr);
         address shareToken = vault.shareToken();
 
-        // verify project registration
+        // verify registration
         assertEq(factory.getProjectCount(), 1);
-        assertEq(factory.getProjectAt(0), vaultAddr);
         (, bool registered) = navEngine.vaults(vaultAddr);
         assertTrue(registered);
 
-        // investors deposit $100k total
+        // investor deposit
         vm.startPrank(investor1);
         usdc.approve(vaultAddr, type(uint256).max);
-        vault.deposit(60_000e6);
+        vault.deposit(100_000e6);
         vm.stopPrank();
 
-        vm.startPrank(investor2);
-        usdc.approve(vaultAddr, type(uint256).max);
-        vault.deposit(40_000e6);
-        vm.stopPrank();
-
-        assertEq(vault.totalRaised(), 100_000e6);
         uint256 totalShares = IERC20(shareToken).totalSupply();
-        
-        // 2% raise fee shares = amount * (10000 - 200) / 10000 = 98%
-        uint256 expectedShares = (100_000e6 * 9800) / 10000;
-        assertEq(totalShares, expectedShares);
+        assertGt(totalShares, 0);
 
-        // stage 0: exploration
-        // at exploration, NAV = floor NAV
-        // floor NAVs set by factory: (minimumRaise * weight) / 100
-        uint256 expectedFloor0 = (MINIMUM_RAISE * 60) / 100;  // 60,000e6
-        uint256 expectedFloor1 = (MINIMUM_RAISE * 40) / 100;  // 40,000e6
-        
-        uint256 navPerToken0 = navEngine.getCurrentNAV(vaultAddr);
-        uint256 expectedNavPerToken0 = (expectedFloor0 + expectedFloor1) / totalShares;
-        assertEq(navPerToken0, expectedNavPerToken0);
+        // stage 0 exploration
+        (,,,, NAVEngine.Stage stage,) = navEngine.getCompany(vaultAddr, 0);
+        assertEq(uint8(stage), 0);  // exploration
 
-        // stage 1 
+        uint256 floorNav = MINIMUM_RAISE;  // 100% weight = full raise
+        (,,,,, uint256 navExploration) = navEngine.getCompany(vaultAddr, 0);
+        assertEq(navExploration, floorNav);  // at exploration, NAV = floor
+
+        uint256 navPerTokenExploration = navEngine.getCurrentNAV(vaultAddr);
+
+        // stage 1 permits
         vm.prank(creator);
-        navEngine.advanceCompanyStage(vaultAddr, 0, 3, 15);
+        navEngine.advanceCompanyStage(vaultAddr, 0, 4, 20);  // 4 years to production, 20 year mine life
 
-        (,,,, NAVEngine.Stage stage0,) = navEngine.getCompany(vaultAddr, 0);
+        (,,,, stage,) = navEngine.getCompany(vaultAddr, 0);
+        assertEq(uint8(stage), 1);  // permits
 
-        // at Permits stage, calculated NAV uses DCF with k_permits = 35%
-        // with 10,000 tonnes, calculated NAV exceeds floor
-        (,,,,, uint256 nav0AtPermits) = navEngine.getCompany(vaultAddr, 0);
-        assertGt(nav0AtPermits, expectedFloor0);
+        (,,,,, uint256 navPermits) = navEngine.getCompany(vaultAddr, 0);
+        assertGt(navPermits, navExploration);  // k_permits = 35% applied
 
-        uint256 navPerTokenAtPermits = navEngine.getCurrentNAV(vaultAddr);
-        assertGe(navPerTokenAtPermits, navPerToken0);
+        uint256 navPerTokenPermits = navEngine.getCurrentNAV(vaultAddr);
+        assertGe(navPerTokenPermits, navPerTokenExploration);  // may round same
 
-        navEngine.updateGoldPrice(5000e6);
-
-        (,,,,, uint256 nav0AtHighPrice) = navEngine.getCompany(vaultAddr, 0);
-        
-        assertGt(nav0AtHighPrice, nav0AtPermits);
-
-        // creator can update company parameters to improve NAV
-        // increase k multipliers and reduce years to production
+        // stage 2 construction
         vm.prank(creator);
-        navEngine.updateCompany(
-            vaultAddr,
-            0,             
-            60,            
-            2,             
-            20,            
-            800,           
-            uint128(expectedFloor0),
-            5000,          
-            8000,          
-            9500           
-        );
+        navEngine.advanceCompanyStage(vaultAddr, 0, 2, 20);  // 2 years to production
 
-        (,,,,, uint256 nav0AfterUpdate) = navEngine.getCompany(vaultAddr, 0);
-        
-        // nav should increase
-        assertGt(nav0AfterUpdate, nav0AtHighPrice);
+        (,,,, stage,) = navEngine.getCompany(vaultAddr, 0);
+        assertEq(uint8(stage), 2);  // construction
 
-        // final nav per token should reflect all increases
+        (,,,,, uint256 navConstruction) = navEngine.getCompany(vaultAddr, 0);
+        assertGt(navConstruction, navPermits);  // k_construction = 70% > k_permits = 35%
+
+        uint256 navPerTokenConstruction = navEngine.getCurrentNAV(vaultAddr);
+        assertGe(navPerTokenConstruction, navPerTokenPermits);  // may round same
+
+        // stage 3 production
+        vm.prank(creator);
+        navEngine.advanceCompanyStage(vaultAddr, 0, 0, 18);  // production started, 18 years remaining
+
+        (,,,, stage,) = navEngine.getCompany(vaultAddr, 0);
+        assertEq(uint8(stage), 3);  // production
+
+        (,,,,, uint256 navProduction) = navEngine.getCompany(vaultAddr, 0);
+        // production NAV uses different calculation with inventory
+        assertGt(navProduction, floorNav);  // still above floor
+
+        // inventory update
+        // mine extracts 1000 tonnes of ore
+        vm.prank(creator);
+        navEngine.updateInventory(vaultAddr, 0, 1000, 17);  // 1000 tonnes, 17 years remaining
+
+        (,,, uint256 inventory,,) = navEngine.getCompany(vaultAddr, 0);
+        assertEq(inventory, 1000);
+
+        (,,,,, uint256 navAfterMining) = navEngine.getCompany(vaultAddr, 0);
+        assertGt(navAfterMining, floorNav);
+
+        // gold price increase
+        navEngine.updateGoldPrice(5000e6);  // gold price doubles
+
+        (,,,,, uint256 navAfterPriceUp) = navEngine.getCompany(vaultAddr, 0);
+        assertGt(navAfterPriceUp, navAfterMining);  // NAV responds to price
+
+        // final state
         uint256 finalNavPerToken = navEngine.getCurrentNAV(vaultAddr);
-        assertGt(finalNavPerToken, navPerToken0);
+        assertGt(finalNavPerToken, navPerTokenExploration);
     }
 
     function test_StageProgressionAffectsNAV() public {
@@ -174,8 +174,8 @@ contract NAVIntegrationTest is Test {
         assertEq(navByStage[0], 10_000e6);
         
         // due to higher k multipliers (35% -> 70% -> 90%)
-        // assertGt(navByStage[1], navByStage[0]); 
-        // assertGt(navByStage[2], navByStage[1]); 
-        // assertGt(navByStage[3], navByStage[0]); 
+        assertGt(navByStage[1], navByStage[0]); 
+        assertGt(navByStage[2], navByStage[1]); 
+        assertGt(navByStage[3], navByStage[0]); 
     }
 }

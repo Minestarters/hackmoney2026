@@ -148,16 +148,17 @@ contract NAVEngineTest is Test {
     function test_DCF_YearsToProductionAffectsNAV() public {
         navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Near Term", 100, 10, 9000, 5, 20, 1000, 1e6);
-        navEngine.advanceCompanyStage(vault, 0, 3, 15);
-        (,,,,, uint256 nav5Years) = navEngine.getCompany(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0, 2, 15);  // 2 years to production
+        (,,,,, uint256 navNearTerm) = navEngine.getCompany(vault, 0);
 
         address vault2 = makeAddr("vault2");
         navEngine.registerVault(vault2, 1_000_000, address(this));
         navEngine.registerCompany(vault2, "Far Term", 100, 10, 9000, 10, 20, 1000, 1e6);
-        navEngine.advanceCompanyStage(vault2, 0, 3, 15);
-        (,,,,, uint256 nav10Years) = navEngine.getCompany(vault2, 0);
+        navEngine.advanceCompanyStage(vault2, 0, 8, 15);  // 8 years to production
+        (,,,,, uint256 navFarTerm) = navEngine.getCompany(vault2, 0);
 
-        assertGt(nav5Years, nav10Years);
+        // Near term has higher NAV because DCF discount is lower
+        assertGt(navNearTerm, navFarTerm);
     }
 
     function test_CreatorCanAdvanceStage() public {
