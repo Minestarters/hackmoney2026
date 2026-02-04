@@ -1,3 +1,8 @@
+/**
+ * Multi-Party Application Session
+ * Based on: https://github.com/stevenzeiler/yellow-sdk-tutorials/blob/main/scripts/app_sessions/app_session_two_signers.ts
+ */
+
 import {
   createAppSessionMessage,
   createAuthRequestMessage,
@@ -6,10 +11,8 @@ import {
   createECDSAMessageSigner,
   createEIP712AuthMessageSigner,
   createSubmitAppStateMessage,
-  RPCAppStateIntent,
   RPCMethod,
   RPCProtocolVersion,
-  type MessageSigner,
   type RPCAppDefinition,
   type RPCAppSessionAllocation,
   type RPCData,
@@ -19,14 +22,13 @@ import { Wallet } from "ethers";
 import { Client } from "yellow-ts";
 import { createWalletClient, http, type WalletClient } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
-import { sepolia } from "viem/chains";
+import { baseSepolia } from "viem/chains";
 import {
   YELLOW_APPLICATION,
   YELLOW_SCOPE,
   YELLOW_SESSION_EXPIRES_MS,
   YELLOW_WALLET_1_SEED_PHRASE,
   YELLOW_WALLET_2_SEED_PHRASE,
-  YELLOW_WS_URL,
 } from "../config";
 
 type Logger = (line: string) => void;
@@ -85,7 +87,7 @@ const authenticateWallet = async (
     Math.floor((Date.now() + YELLOW_SESSION_EXPIRES_MS) / 1000)
   );
 
-  const allowances = [{ asset: "usdc", amount: "0.01" }];
+  const allowances = [{ asset: "ytest.usd", amount: "0.01" }];
 
   const authRequest = await createAuthRequestMessage({
     address,
@@ -100,7 +102,8 @@ const authenticateWallet = async (
   void client.sendMessage(authRequest);
 
   const challenge = await waitForResponse(client, RPCMethod.AuthChallenge);
-  const challengeMessage = challenge.params?.challengeMessage;
+  const challengeParams = challenge.params as { challengeMessage?: string } | undefined;
+  const challengeMessage = challengeParams?.challengeMessage;
   if (!challengeMessage) {
     throw new Error("Missing auth challenge message");
   }
@@ -124,7 +127,8 @@ const authenticateWallet = async (
   void client.sendMessage(verifyMessage);
 
   const verify = await waitForResponse(client, RPCMethod.AuthVerify);
-  if (!verify.params?.success) {
+  const verifyParams = verify.params as { success?: boolean } | undefined;
+  if (!verifyParams?.success) {
     throw new Error("Yellow auth failed");
   }
 
@@ -148,34 +152,48 @@ export const runYellowMultiPartySession = async (
     throw new Error("Missing VITE_WALLET_1_SEED_PHRASE or VITE_WALLET_2_SEED_PHRASE");
   }
 
+  // ============================================================================
+  // STEP 1: Connect to Yellow Network (Sandbox for testing)
+  // ============================================================================
   logLine(options.onLog, "Connecting to Yellow clearnet...");
-  const yellow = new Client({ url: YELLOW_WS_URL });
+  const yellow = new Client({
+    url: "wss://clearnet-sandbox.yellow.com/ws",
+  });
   await yellow.connect();
   logLine(options.onLog, "Connected to Yellow clearnet.");
 
+  // ============================================================================
+  // STEP 2: Set Up Both Participants' Wallets
+  // ============================================================================
   const walletClient = createWalletClient({
     account: mnemonicToAccount(YELLOW_WALLET_1_SEED_PHRASE),
-    chain: sepolia,
+    chain: baseSepolia,
     transport: http(),
   });
 
   const wallet2Client = createWalletClient({
     account: mnemonicToAccount(YELLOW_WALLET_2_SEED_PHRASE),
-    chain: sepolia,
+    chain: baseSepolia,
     transport: http(),
   });
 
+  // ============================================================================
+  // STEP 3: Authenticate Both Participants
+  // ============================================================================
   logLine(options.onLog, "Authenticating wallet 1...");
   const sessionKey = await authenticateWallet(yellow, walletClient, options.onLog);
-  const messageSigner: MessageSigner = createECDSAMessageSigner(sessionKey.privateKey);
+  const messageSigner = createECDSAMessageSigner(sessionKey.privateKey);
 
   logLine(options.onLog, "Authenticating wallet 2...");
   const sessionKey2 = await authenticateWallet(yellow, wallet2Client, options.onLog);
-  const messageSigner2: MessageSigner = createECDSAMessageSigner(sessionKey2.privateKey);
+  const messageSigner2 = createECDSAMessageSigner(sessionKey2.privateKey);
 
   const userAddress = walletClient.account?.address as `0x${string}`;
   const partnerAddress = wallet2Client.account?.address as `0x${string}`;
 
+  // ============================================================================
+  // STEP 4: Define Application Configuration
+  // ============================================================================
   const appDefinition: RPCAppDefinition = {
     protocol: RPCProtocolVersion.NitroRPC_0_4,
     participants: [userAddress, partnerAddress],
@@ -186,57 +204,57 @@ export const runYellowMultiPartySession = async (
     application: YELLOW_APPLICATION,
   };
 
-  const allocations: RPCAppSessionAllocation[] = [
-    { participant: userAddress, asset: "usdc", amount: "0.01" },
-    { participant: partnerAddress, asset: "usdc", amount: "0.00" },
-  ];
+  // ============================================================================
+  // STEP 5: Set Initial Allocations
+  // ============================================================================
+  const allocations = [
+    { participant: userAddress, asset: "ytest.usd", amount: "0.01" },
+    { participant: partnerAddress, asset: "ytest.usd", amount: "0.00" },
+  ] as RPCAppSessionAllocation[];
 
+  // ============================================================================
+  // STEP 6: Create and Submit App Session
+  // ============================================================================
   logLine(options.onLog, "Creating app session...");
   const sessionMessage = await createAppSessionMessage(messageSigner, {
     definition: appDefinition,
     allocations,
   });
 
-  const sessionResponse = (await yellow.sendMessage(sessionMessage)) as RPCResponse | void;
-  if (sessionResponse) {
-    logLine(options.onLog, `Create session response: ${JSON.stringify(sessionResponse)}`);
-    if (sessionResponse.method === RPCMethod.Error) {
-      throw new Error(sessionResponse.params?.error || "Create session failed");
-    }
-  }
+  logLine(options.onLog, `Session message created: ${sessionMessage}`);
 
-  const resolvedResponse =
-    sessionResponse?.method === RPCMethod.CreateAppSession
-      ? sessionResponse
-      : await waitForResponse(yellow, RPCMethod.CreateAppSession);
+  const sessionResponse = (await yellow.sendMessage(sessionMessage)) as RPCResponse;
+  logLine(options.onLog, "Session message sent.");
+  logLine(options.onLog, `Session response: ${JSON.stringify(sessionResponse)}`);
 
-  const appSessionId = resolvedResponse?.params?.appSessionId as
-    | `0x${string}`
-    | undefined;
-  const baseVersion = (resolvedResponse?.params?.version ?? 0) as number;
-
+  const sessionParams = sessionResponse.params as { appSessionId?: `0x${string}` } | undefined;
+  const appSessionId = sessionParams?.appSessionId;
   if (!appSessionId) {
     throw new Error("Missing appSessionId from create session response");
   }
 
   logLine(options.onLog, `App session created: ${appSessionId}`);
 
-  const finalAllocations: RPCAppSessionAllocation[] = [
-    { participant: userAddress, asset: "usdc", amount: "0.00" },
-    { participant: partnerAddress, asset: "usdc", amount: "0.01" },
-  ];
+  // ============================================================================
+  // STEP 7: Update Session State (Transfer Between Participants)
+  // ============================================================================
+  const finalAllocations = [
+    { participant: userAddress, asset: "ytest.usd", amount: "0.00" },
+    { participant: partnerAddress, asset: "ytest.usd", amount: "0.01" },
+  ] as RPCAppSessionAllocation[];
 
   logLine(options.onLog, "Submitting app state update...");
   const submitAppStateMessage = await createSubmitAppStateMessage(messageSigner, {
     app_session_id: appSessionId,
-    intent: RPCAppStateIntent.Operate,
-    version: baseVersion + 1,
     allocations: finalAllocations,
   });
 
-  await yellow.sendMessage(submitAppStateMessage);
-  logLine(options.onLog, "App state update submitted.");
+  const submitAppStateMessageJson = JSON.parse(submitAppStateMessage);
+  logLine(options.onLog, `Submit app state message: ${JSON.stringify(submitAppStateMessageJson)}`);
 
+  // ============================================================================
+  // STEP 8: Close Session with Multi-Party Signatures
+  // ============================================================================
   logLine(options.onLog, "Preparing close session message...");
   const closeSessionMessage = await createCloseAppSessionMessage(messageSigner, {
     app_session_id: appSessionId,
@@ -248,14 +266,28 @@ export const runYellowMultiPartySession = async (
     sig: string[];
   };
 
+  // ============================================================================
+  // STEP 9: Collect Second Participant's Signature
+  // ============================================================================
   const signedCloseSessionMessageSignature2 = await messageSigner2(
     closeSessionMessageJson.req
   );
 
+  logLine(options.onLog, `Wallet 2 signed close session message: ${signedCloseSessionMessageSignature2}`);
+
   closeSessionMessageJson.sig.push(signedCloseSessionMessageSignature2);
 
+  logLine(options.onLog, `Close session message (with all signatures): ${JSON.stringify(closeSessionMessageJson)}`);
+
+  // ============================================================================
+  // STEP 10: Submit Close Request
+  // ============================================================================
   logLine(options.onLog, "Sending close session message...");
-  await yellow.sendMessage(JSON.stringify(closeSessionMessageJson));
+  const closeSessionResponse = await yellow.sendMessage(
+    JSON.stringify(closeSessionMessageJson)
+  );
+  logLine(options.onLog, "Close session message sent.");
+  logLine(options.onLog, `Close session response: ${JSON.stringify(closeSessionResponse)}`);
 
   logLine(options.onLog, "Session closed.");
 
@@ -263,5 +295,5 @@ export const runYellowMultiPartySession = async (
     logLine(options.onLog, `Yellow message: ${JSON.stringify(message)}`);
   });
 
-  return { appSessionId, version: baseVersion + 1 };
+  return { appSessionId, version: 1 };
 };
