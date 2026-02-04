@@ -97,17 +97,23 @@ async function main(): Promise<void> {
     fs.writeFileSync(outputPath, csv);
     console.log(`Profit distribution CSV written to ${outputPath}`);
 
-    // 5. Chain Totals
-    const chainTotals: Record<string, bigint> = {};
-    holders.forEach(holder => {
-      const chainId = holder.initialDepositChain;
-      const balance = BigInt(holder.balance);
-      chainTotals[chainId] = (chainTotals[chainId] || 0n) + balance;
+    // 5. Chain Totals (Profit Share per Chain)
+    const profitTotalsByChain: Record<string, bigint> = {};
+
+    csvData.forEach(row => {
+      const chainId = row.initialDepositChain;
+      const profit = BigInt(row.profitShare);
+      profitTotalsByChain[chainId] = (profitTotalsByChain[chainId] || 0n) + profit;
     });
 
-    console.log("Snapshot totals per chain:", Object.fromEntries(
-      Object.entries(chainTotals).map(([k, v]) => [k, v.toString()])
+    console.log("--- Distribution Summary ---");
+    console.log("Total Profit per chain:", Object.fromEntries(
+      Object.entries(profitTotalsByChain).map(([k, v]) => [k, v.toString()])
     ));
+
+    // Optional: Calculate total distributed to verify against netDistributableAmount
+    const actualDistributed = Object.values(profitTotalsByChain).reduce((a, b) => a + b, 0n);
+    console.log(`Actual Total Distributed (Dust included): ${actualDistributed.toString()}`);
 
     //TODO: Implement distribution logic here using TREASURY_PRIVATE_KEY and CIRCLE_API_KEY
 
