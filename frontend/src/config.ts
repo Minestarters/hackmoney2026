@@ -7,7 +7,7 @@ export const YELLOW_WS_URL =
   import.meta.env.VITE_YELLOW_WS_URL || "wss://clearnet.yellow.com/ws";
 export const YELLOW_PROTOCOL =
   import.meta.env.VITE_YELLOW_PROTOCOL || "NitroRPC/0.4";
-export const YELLOW_ASSET = import.meta.env.VITE_YELLOW_ASSET || "usdc";
+export const YELLOW_ASSET = import.meta.env.VITE_YELLOW_ASSET || "ytest.USD";
 export const YELLOW_APPLICATION = "minestarters-curators";
 export const YELLOW_SCOPE =
   import.meta.env.VITE_YELLOW_SCOPE || "transfer,app.create";
