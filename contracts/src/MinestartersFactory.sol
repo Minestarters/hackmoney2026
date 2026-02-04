@@ -62,8 +62,7 @@ contract MinestartersFactory {
         uint256 minimumRaise,
         uint256 deadline,
         address withdrawAddress,
-        uint256 raiseFeeBps,
-        uint256 profitFeeBps
+        uint256 raiseFeeBps
     ) external returns (address) {
         uint256 len = companyNames.length;
         require(len > 0, "No companies");
@@ -72,7 +71,6 @@ contract MinestartersFactory {
         require(deadline > block.timestamp, "Deadline must be future");
         require(withdrawAddress != address(0), "Withdraw address required");
         require(raiseFeeBps <= 10_000, "Invalid raise fee");
-        require(profitFeeBps <= 10_000, "Invalid profit fee");
 
         uint256 totalWeight;
         for (uint256 i = 0; i < len; i++) {
