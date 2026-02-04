@@ -2,14 +2,15 @@
 pragma solidity ^0.8.24;
 
 import {BasketVault} from "./BasketVault.sol";
+import {NAVEngine} from "./NAVEngine.sol";
 
-/// @title MinestartersFactory
-/// @notice Deploys BasketVaults and tracks created projects.
 contract MinestartersFactory {
     address[] private projects;
     address public immutable USDC;
+    NAVEngine public navEngine;
 
     event ProjectCreated(address indexed creator, address vault, address token, string name);
+    event ProjectCreatedWithNAV(address indexed vault, uint256 companyCount);
 
     constructor(address usdcToken) {
         require(usdcToken != address(0), "USDC required");
@@ -54,7 +55,60 @@ contract MinestartersFactory {
         emit ProjectCreated(msg.sender, address(vault), vault.shareToken(), projectName);
     }
 
-    /// @notice // TODO: replace with indexer.
+    function createProjectWithNAV(
+        string memory projectName,
+        string[] memory companyNames,
+        uint256[] memory companyWeights,
+        uint256 minimumRaise,
+        uint256 deadline,
+        address withdrawAddress,
+        uint256 raiseFeeBps,
+        uint256 profitFeeBps
+    ) external returns (address) {
+        uint256 len = companyNames.length;
+        require(len > 0, "No companies");
+        require(companyWeights.length == len, "Invalid weights");
+        require(minimumRaise > 0, "Minimum raise required");
+        require(deadline > block.timestamp, "Deadline must be future");
+        require(withdrawAddress != address(0), "Withdraw address required");
+        require(raiseFeeBps <= 10_000, "Invalid raise fee");
+        require(profitFeeBps <= 10_000, "Invalid profit fee");
+
+        uint256 totalWeight;
+        for (uint256 i = 0; i < len; i++) {
+            totalWeight += companyWeights[i];
+        }
+        require(totalWeight == 100, "Weights must sum to 100");
+
+        BasketVault vault = new BasketVault(
+            projectName,
+            companyNames,
+            companyWeights,
+            USDC,
+            msg.sender,
+            withdrawAddress,
+            minimumRaise,
+            deadline,
+            raiseFeeBps,
+            profitFeeBps
+        );
+
+        projects.push(address(vault));
+        emit ProjectCreated(msg.sender, address(vault), vault.shareToken(), projectName);
+
+        navEngine.registerVault(address(vault), 0, msg.sender);
+
+        for (uint256 i = 0; i < len; i++) {
+            uint256 floorNav = (minimumRaise * companyWeights[i]) / 100;
+            navEngine.registerCompany(
+                address(vault), companyNames[i], companyWeights[i], 10_000, 8500, 5, 15, 1000, floorNav
+            );
+        }
+
+        emit ProjectCreatedWithNAV(address(vault), len);
+        return address(vault);
+    }
+
     function getAllProjects() external view returns (address[] memory) {
         return projects;
     }

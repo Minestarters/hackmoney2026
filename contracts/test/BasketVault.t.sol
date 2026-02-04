@@ -23,13 +23,13 @@ contract BasketVaultTest is Test {
 
     function setUp() public {
         usdc = new MockUSDC();
-        
+
         uint256 deadline = block.timestamp + 7 * DAY;
-        
+
         string[] memory companies = new string[](2);
         companies[0] = "Alpha Metals";
         companies[1] = "Beta Minerals";
-        
+
         uint256[] memory weights = new uint256[](2);
         weights[0] = 60;
         weights[1] = 40;
