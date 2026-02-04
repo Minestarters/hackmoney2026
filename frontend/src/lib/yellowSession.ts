@@ -28,7 +28,6 @@ import {
   YELLOW_APPLICATION,
   YELLOW_SCOPE,
   YELLOW_SESSION_EXPIRES_MS,
-  YELLOW_WALLET_1_SEED_PHRASE,
   YELLOW_WALLET_2_SEED_PHRASE,
 } from "../config";
 
@@ -217,6 +216,7 @@ const authenticateWallet = async (
 // ============================================================================
 
 export const createYellowSessionManager = (
+  account: Account,
   onStateChange: (state: YellowSessionState) => void,
   logger?: Logger
 ): YellowSessionManager => {
@@ -250,9 +250,6 @@ export const createYellowSessionManager = (
   
   // Creator creates session and invite using predefined User 2 address
   const createSession = async (): Promise<string> => {
-    if (!YELLOW_WALLET_1_SEED_PHRASE) {
-      throw new Error("Missing VITE_WALLET_1_SEED_PHRASE");
-    }
     if (!YELLOW_WALLET_2_SEED_PHRASE) {
       throw new Error("Missing VITE_WALLET_2_SEED_PHRASE");
     }
@@ -262,9 +259,9 @@ export const createYellowSessionManager = (
     try {
       const client = await connectToYellow();
 
-      // Get User 1's wallet
+      // Use the connected wallet account
       const walletClient = createWalletClient({
-        account: mnemonicToAccount(YELLOW_WALLET_1_SEED_PHRASE),
+        account,
         chain: baseSepolia,
         transport: http(),
       });
