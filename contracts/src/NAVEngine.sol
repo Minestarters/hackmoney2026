@@ -197,6 +197,7 @@ contract NAVEngine is Ownable {
         emit CompanyRegistered(vault, v.companyCount - 1, name);
     }
 
+    ///@notice Advance a company to the next stage
     function advanceCompanyStage(
         address vault,
         uint256 companyIndex,
