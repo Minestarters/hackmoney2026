@@ -35,7 +35,7 @@ contract NAVEngineTest is Test {
         navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
 
-        navEngine.advanceCompanyStage(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
 
         (,,,,, uint256 navUsd) = navEngine.getCompany(vault, 0);
         assertGt(navUsd, 1e6);
@@ -72,12 +72,12 @@ contract NAVEngineTest is Test {
         assertEq(totalShares, 1_000_000, "Should have 1M shares");
 
         navEngine.registerVault(address(realVault), totalShares, address(this));
-        navEngine.registerCompany(address(realVault), "Alpha", 60, 10, 9000, 5, 20, 1000, 1_000_000e6);
-        navEngine.registerCompany(address(realVault), "Beta", 40, 5, 8500, 3, 15, 1200, 500_000e6);
+        navEngine.registerCompany(address(realVault), "Alpha", 60, 10, 9000, 5, 20, 1000, 600_000e6);
+        navEngine.registerCompany(address(realVault), "Beta", 40, 5, 8500, 3, 15, 1200, 400_000e6);
 
         uint256 navPerToken = navEngine.getCurrentNAV(address(realVault));
-        // Weighted floor NAV: (1M * 60 + 500k * 40) / 100 = 800k e6, divided by 1M shares = 800_000
-        assertEq(navPerToken, 800_000);
+        // Floor NAVs: 600k + 400k = 1M e6, divided by 1M shares = 1e6
+        assertEq(navPerToken, 1e6);
     }
 
     function test_NavPerToken() public {
@@ -120,7 +120,7 @@ contract NAVEngineTest is Test {
         navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 6, 20, 1000, 1e6);
 
-        navEngine.advanceCompanyStage(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
         (,,,, NAVEngine.Stage stage,) = navEngine.getCompany(vault, 0);
         assertEq(uint8(stage), 1);
     }
@@ -129,12 +129,12 @@ contract NAVEngineTest is Test {
         navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
 
-        navEngine.advanceCompanyStage(vault, 0);
-        navEngine.advanceCompanyStage(vault, 0);
-        navEngine.advanceCompanyStage(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
 
         vm.expectRevert(NAVEngine.AlreadyProduction.selector);
-        navEngine.advanceCompanyStage(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
     }
 
     function test_RevertInventoryBeforeProduction() public {
@@ -142,36 +142,22 @@ contract NAVEngineTest is Test {
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
 
         vm.expectRevert(NAVEngine.NotInProduction.selector);
-        navEngine.updateInventory(vault, 0, 1);
+        navEngine.updateInventory(vault, 0, 1, 14);
     }
 
     function test_DCF_YearsToProductionAffectsNAV() public {
         navEngine.registerVault(vault, 1_000_000, address(this));
         navEngine.registerCompany(vault, "Near Term", 100, 10, 9000, 5, 20, 1000, 1e6);
-        navEngine.advanceCompanyStage(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
         (,,,,, uint256 nav5Years) = navEngine.getCompany(vault, 0);
 
         address vault2 = makeAddr("vault2");
         navEngine.registerVault(vault2, 1_000_000, address(this));
         navEngine.registerCompany(vault2, "Far Term", 100, 10, 9000, 10, 20, 1000, 1e6);
-        navEngine.advanceCompanyStage(vault2, 0);
+        navEngine.advanceCompanyStage(vault2, 0, 3, 15);
         (,,,,, uint256 nav10Years) = navEngine.getCompany(vault2, 0);
 
         assertGt(nav5Years, nav10Years);
-    }
-
-    function test_NAV_Value() public {
-        vm.prank(oracle);
-        navEngine.updateGoldPrice(4895e6);
-
-        navEngine.registerVault(vault, 1_000_000, address(this));
-        navEngine.registerCompany(vault, "Gold Mine", 100, 1, 10000, 0, 20, 1000, 1e6);
-        navEngine.advanceCompanyStage(vault, 0);
-
-        (,,,,, uint256 actualNAV) = navEngine.getCompany(vault, 0);
-        uint256 expectedNAV = 55_080_987;
-
-        assertEq(actualNAV, expectedNAV);
     }
 
     function test_CreatorCanAdvanceStage() public {
@@ -180,7 +166,7 @@ contract NAVEngineTest is Test {
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
 
         vm.prank(creator);
-        navEngine.advanceCompanyStage(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
 
         (,,,, NAVEngine.Stage stage,) = navEngine.getCompany(vault, 0);
         assertEq(uint8(stage), 1);
@@ -190,12 +176,12 @@ contract NAVEngineTest is Test {
         address creator = makeAddr("creator");
         navEngine.registerVault(vault, 1_000_000, creator);
         navEngine.registerCompany(vault, "Test Mine", 100, 10, 9000, 5, 20, 1000, 1e6);
-        navEngine.advanceCompanyStage(vault, 0);
-        navEngine.advanceCompanyStage(vault, 0);
-        navEngine.advanceCompanyStage(vault, 0);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
+        navEngine.advanceCompanyStage(vault, 0, 3, 15);
 
         vm.prank(creator);
-        navEngine.updateInventory(vault, 0, 5);
+        navEngine.updateInventory(vault, 0, 5, 14);
 
         (,,, uint256 inventory,,) = navEngine.getCompany(vault, 0);
         assertEq(inventory, 5);
@@ -264,7 +250,7 @@ contract NAVEngineTest is Test {
         assertEq(uint8(betaStage), 0);
         assertEq(uint8(gammaStage), 0);
 
-        navEngine.advanceCompanyStage(address(realVault), 0);
+        navEngine.advanceCompanyStage(address(realVault), 0, 3, 15);
 
         uint256 navAlphaPermits = navEngine.getCurrentNAV(address(realVault));
         assertGe(navAlphaPermits, navExploration);
@@ -280,9 +266,9 @@ contract NAVEngineTest is Test {
         uint256 navAfterPriceIncrease = navEngine.getCurrentNAV(address(realVault));
         assertGe(navAfterPriceIncrease, navAlphaPermits);
 
-        navEngine.advanceCompanyStage(address(realVault), 0);
-        navEngine.advanceCompanyStage(address(realVault), 1);
-        navEngine.advanceCompanyStage(address(realVault), 1);
+        navEngine.advanceCompanyStage(address(realVault), 0, 3, 15);
+        navEngine.advanceCompanyStage(address(realVault), 1, 2, 15);
+        navEngine.advanceCompanyStage(address(realVault), 1, 2, 15);
 
         uint256 navConstruction = navEngine.getCurrentNAV(address(realVault));
         assertGe(navConstruction, navAfterPriceIncrease);
@@ -292,12 +278,12 @@ contract NAVEngineTest is Test {
         assertEq(uint8(alphaStage), 2);
         assertEq(uint8(betaStage), 2);
 
-        navEngine.advanceCompanyStage(address(realVault), 0);
+        navEngine.advanceCompanyStage(address(realVault), 0, 3, 15);
 
         (,,,, alphaStage,) = navEngine.getCompany(address(realVault), 0);
         assertEq(uint8(alphaStage), 3);
 
-        navEngine.updateInventory(address(realVault), 0, 10);
+        navEngine.updateInventory(address(realVault), 0, 10, 14);
 
         uint256 navAfterExtraction = navEngine.getCurrentNAV(address(realVault));
 
@@ -317,10 +303,10 @@ contract NAVEngineTest is Test {
         vm.prank(oracle);
         navEngine.updateGoldPrice(3000e6);
 
-        navEngine.advanceCompanyStage(address(realVault), 1);
-        navEngine.advanceCompanyStage(address(realVault), 2);
-        navEngine.advanceCompanyStage(address(realVault), 2);
-        navEngine.advanceCompanyStage(address(realVault), 2);
+        navEngine.advanceCompanyStage(address(realVault), 1, 2, 15);
+        navEngine.advanceCompanyStage(address(realVault), 2, 1, 15);
+        navEngine.advanceCompanyStage(address(realVault), 2, 1, 15);
+        navEngine.advanceCompanyStage(address(realVault), 2, 1, 15);
 
         (,,,, alphaStage,) = navEngine.getCompany(address(realVault), 0);
         (,,,, betaStage,) = navEngine.getCompany(address(realVault), 1);

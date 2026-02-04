@@ -107,7 +107,7 @@ contract NAVEngine is Ownable {
         for (uint256 i = 0; i < companyCount; i++) {
             Company memory c = companies[vault][i];
             if (c.registered) {
-                totalNav += (_calculateCompanyNAV(c) * c.weight) / 100;
+                totalNav += _calculateCompanyNAV(c);
             }
         }
     }
@@ -139,7 +139,8 @@ contract NAVEngine is Ownable {
         uint256 remainingGross = remainingOz * goldPriceUsd / 1e6;
 
         uint256 dcf = _calculateDCF(c.remainingMineLife, c.discountRateBps);
-        return inventoryValue + (remainingGross * c.kProduction * dcf / BPS / WAD);
+        uint256 nav = inventoryValue + (remainingGross * c.kProduction * dcf / BPS / WAD);
+        return nav > c.floorNavTotalUsd ? nav : c.floorNavTotalUsd;
     }
 
     function _calculateDCF(uint256 numYears, uint256 rateBps) internal pure returns (uint256) {
@@ -196,13 +197,25 @@ contract NAVEngine is Ownable {
         emit CompanyRegistered(vault, v.companyCount - 1, name);
     }
 
-    function advanceCompanyStage(address vault, uint256 companyIndex) external {
+    function advanceCompanyStage(
+        address vault,
+        uint256 companyIndex,
+        uint32 newYearsToProduction,
+        uint32 newRemainingMineLife
+    ) external {
         if (vaultCreators[vault] != msg.sender && msg.sender != owner()) revert Unauthorized();
         Company storage c = companies[vault][companyIndex];
         if (!c.registered) revert CompanyNotRegistered();
         if (uint8(c.currentStage) >= 3) revert AlreadyProduction();
 
         c.currentStage = Stage(uint8(c.currentStage) + 1);
+        c.yearsToProduction = newYearsToProduction;
+        c.remainingMineLife = newRemainingMineLife;
+        
+        if (c.currentStage == Stage.Production) {
+            c.yearsToProduction = 0;
+        }
+        
         emit CompanyStageAdvanced(vault, companyIndex, c.currentStage);
     }
 
@@ -234,7 +247,12 @@ contract NAVEngine is Ownable {
         emit CompanyUpdated(vault, companyIndex);
     }
 
-    function updateInventory(address vault, uint256 companyIndex, uint128 tonnes) external {
+    function updateInventory(
+        address vault,
+        uint256 companyIndex,
+        uint128 tonnes,
+        uint32 newRemainingMineLife
+    ) external {
         if (vaultCreators[vault] != msg.sender && msg.sender != owner()) revert Unauthorized();
         Company storage c = companies[vault][companyIndex];
         if (!c.registered) revert CompanyNotRegistered();
@@ -242,6 +260,8 @@ contract NAVEngine is Ownable {
         if (tonnes > c.totalResourceTonnes) revert ExceedsResource();
 
         c.inventoryTonnes = tonnes;
+        c.remainingMineLife = newRemainingMineLife;
+        
         emit CompanyUpdated(vault, companyIndex);
     }
 
