@@ -3,21 +3,20 @@ pragma solidity ^0.8.24;
 
 import {BasketVault} from "./BasketVault.sol";
 import {NAVEngine} from "./NAVEngine.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract MinestartersFactory {
     address[] private projects;
     address public immutable usdc;
-    NAVEngine public immutable navEngine;
+    NAVEngine public navEngine;
 
     event ProjectCreated(address indexed creator, address vault, address token, string name);
-    event ProjectRegisteredWithNAV(address indexed vault, uint256 companyCount);
+    event ProjectCreatedWithNAV(address indexed vault, uint256 companyCount);
 
-    constructor(address usdcToken, address _navEngine) {
+    constructor(address usdcToken) {
         require(usdcToken != address(0), "USDC required");
-        require(_navEngine != address(0), "NAVEngine required");
         usdc = usdcToken;
-        navEngine = NAVEngine(_navEngine);
+        navEngine = new NAVEngine(address(0), msg.sender);
+        navEngine.setFactory(address(this));
     }
 
     function createProject(
@@ -61,7 +60,7 @@ contract MinestartersFactory {
         emit ProjectCreated(msg.sender, address(vault), vault.shareToken(), projectName);
     }
 
-    function createProjectNAV(
+    function createProjectWithNAV(
         string memory projectName,
         string[] memory companyNames,
         uint256[] memory companyWeights,
@@ -102,23 +101,24 @@ contract MinestartersFactory {
         projects.push(address(vault));
         emit ProjectCreated(msg.sender, address(vault), vault.shareToken(), projectName);
 
-        navEngine.registerVault(address(vault), 0);
+        navEngine.registerVault(address(vault), 0, msg.sender);
 
         for (uint256 i = 0; i < len; i++) {
+            uint256 floorNav = (minimumRaise * companyWeights[i]) / 100;
             navEngine.registerCompany(
                 address(vault),
                 companyNames[i],
                 companyWeights[i],
-                10, // resourceTonnes
-                8500, // recoveryBps
-                5, // yearsToProduction
-                15, // mineLifeYears
-                1000, // discountRateBps
-                1_000_000e6 // floorNavUsd
+                10,
+                8500,
+                5,
+                15,
+                1000,
+                floorNav
             );
         }
 
-        emit ProjectRegisteredWithNAV(address(vault), len);
+        emit ProjectCreatedWithNAV(address(vault), len);
         return address(vault);
     }
 
