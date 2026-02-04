@@ -20,10 +20,9 @@ import {
   type RPCData,
   type RPCResponse,
 } from "@erc7824/nitrolite";
-import { Wallet } from "ethers";
 import { Client } from "yellow-ts";
-import { createWalletClient, http, type WalletClient } from "viem";
-import { mnemonicToAccount } from "viem/accounts";
+import { createWalletClient, http, type WalletClient, type Account } from "viem";
+import { generatePrivateKey, privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import {
   YELLOW_APPLICATION,
@@ -152,10 +151,11 @@ const authenticateWallet = async (
   walletClient: WalletClient,
   logger?: Logger
 ): Promise<SessionKey> => {
-  const sessionKeyWallet = Wallet.createRandom();
+  const privateKey = generatePrivateKey();
+  const account = privateKeyToAccount(privateKey);
   const sessionKey: SessionKey = {
-    privateKey: sessionKeyWallet.privateKey as `0x${string}`,
-    address: sessionKeyWallet.address as `0x${string}`,
+    privateKey,
+    address: account.address,
   };
 
   const address = walletClient.account?.address as `0x${string}`;
@@ -919,14 +919,15 @@ export type YellowSessionResult = {
 };
 
 export type YellowSessionOptions = {
+  account: Account;
   onLog?: Logger;
 };
 
 export const runYellowMultiPartySession = async (
-  options: YellowSessionOptions = {}
+  options: YellowSessionOptions
 ): Promise<YellowSessionResult> => {
-  if (!YELLOW_WALLET_1_SEED_PHRASE || !YELLOW_WALLET_2_SEED_PHRASE) {
-    throw new Error("Missing VITE_WALLET_1_SEED_PHRASE or VITE_WALLET_2_SEED_PHRASE");
+  if (!YELLOW_WALLET_2_SEED_PHRASE) {
+    throw new Error("Missing VITE_WALLET_2_SEED_PHRASE");
   }
 
   logLine(options.onLog, "Connecting to Yellow clearnet...");
@@ -937,7 +938,7 @@ export const runYellowMultiPartySession = async (
   logLine(options.onLog, "Connected to Yellow clearnet.");
 
   const walletClient = createWalletClient({
-    account: mnemonicToAccount(YELLOW_WALLET_1_SEED_PHRASE),
+    account: options.account,
     chain: baseSepolia,
     transport: http(),
   });

@@ -1,35 +1,46 @@
 import { useState } from "react";
-import { Contract, parseUnits } from "ethers";
-import { erc20Abi } from "../contracts/abis";
+import { parseUnits } from "viem";
+import { useAccount, useConnect } from "wagmi";
+import { injected } from "wagmi/connectors";
 import { USDC_ADDRESS } from "../config";
-import { useWallet } from "../context/WalletContext";
+import { getWalletClient, publicClient } from "../lib/wagmi";
+import { writeUsdc } from "../lib/contracts";
 
 const MintButton = () => {
-  const { signer, connect, isConnecting } = useWallet();
+  const { isConnected, address } = useAccount();
+  const { connect, isPending } = useConnect();
   const [minting, setMinting] = useState(false);
 
   const handleMint = async () => {
-    if (!signer) {
-      await connect();
+    if (!isConnected) {
+      connect({ connector: injected() });
       return;
     }
     if (!USDC_ADDRESS) {
       alert("Set VITE_USDC_ADDRESS in the frontend .env");
       return;
     }
+    if (!address) {
+      alert("No address found");
+      return;
+    }
+
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      alert("Could not get wallet client");
+      return;
+    }
 
     try {
       setMinting(true);
-      const contract = new Contract(USDC_ADDRESS, erc20Abi, signer);
-      const user = await signer.getAddress();
-      const tx = await contract.mint(user, parseUnits("1000", 6));
-      await tx.wait();
+      const hash = await writeUsdc.mint(walletClient, address, parseUnits("1000", 6));
+      await publicClient.waitForTransactionReceipt({ hash });
     } finally {
       setMinting(false);
     }
   };
 
-  const disabled = minting || isConnecting;
+  const disabled = minting || isPending;
 
   return (
     <button

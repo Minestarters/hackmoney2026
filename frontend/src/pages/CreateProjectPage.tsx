@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Contract, parseUnits } from "ethers";
+import { parseUnits } from "viem";
+import { useConnect, useConnection } from "wagmi";
+import { injected } from "wagmi/connectors";
 import { FACTORY_ADDRESS } from "../config";
-import { minestartersFactoryAbi } from "../contracts/abis";
-import { useWallet } from "../context/WalletContext";
+import { getWalletClient, publicClient } from "../lib/wagmi";
 import {
   createYellowSessionManager,
   runYellowMultiPartySession,
@@ -10,6 +11,7 @@ import {
   type BasketState,
   type ProjectFormFields,
 } from "../lib/yellowSession";
+import { writeFactory } from "../lib/contracts";
 
 // Helper to calculate weights from basket stakes
 const calculateWeightsFromBasket = (basket: BasketState): { name: string; weight: number }[] => {
@@ -61,7 +63,18 @@ const shortAddress = (addr: string) =>
   addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
 
 const CreateProjectPage = () => {
-  const { signer, connect, account } = useWallet();
+  const { address: account, isConnected } = useConnection();
+  const { mutate } = useConnect();
+  const [projectName, setProjectName] = useState("");
+  const [minimumRaise, setMinimumRaise] = useState("1000");
+  const [deadline, setDeadline] = useState(() => toDateInputValue(addDays(new Date(), 30)));
+  const [raiseFeePct, setRaiseFeePct] = useState("0.05");
+  const [profitFeePct, setProfitFeePct] = useState("0.01");
+  const [withdrawAddress, setWithdrawAddress] = useState("");
+  const [companies, setCompanies] = useState<CompanyInput[]>([
+    { name: "Company A", weight: 50 },
+    { name: "Company B", weight: 50 },
+  ]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -199,11 +212,17 @@ const CreateProjectPage = () => {
   };
 
   const runLegacyDemo = async () => {
+    if (!account) {
+      setYellowError("Connect wallet first");
+      return;
+    }
     setYellowError(null);
     setYellowLogs([]);
     setLegacyRunning(true);
     try {
-      await runYellowMultiPartySession({ onLog: appendLog });
+      // Note: runYellowMultiPartySession expects a viem Account, not just an address.
+      // This needs to be refactored to use a proper viem account or wallet client.
+      await runYellowMultiPartySession({ account: account as never, onLog: appendLog });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Yellow session failed";
       setYellowError(msg);
@@ -300,16 +319,21 @@ const CreateProjectPage = () => {
       return;
     }
 
-    if (!signer) {
-      await connect();
+    if (!isConnected) {
+      mutate({ connector: injected() });
+      return;
+    }
+
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      setMessage("Could not get wallet");
       return;
     }
 
     try {
       setSubmitting(true);
-      const factory = new Contract(FACTORY_ADDRESS, minestartersFactoryAbi, signer);
-      const minRaise = parseUnits(localFormFields.minimumRaise || "0", 6);
-      const deadlineTs = dateInputValueToUnixSeconds(localFormFields.deadline);
+      const minRaise = parseUnits(minimumRaise || "0", 6);
+      const deadlineTs = dateInputValueToUnixSeconds(deadline);
       if (!Number.isFinite(deadlineTs)) {
         setMessage("Select a valid deadline");
         setSubmitting(false);
@@ -324,18 +348,18 @@ const CreateProjectPage = () => {
         return;
       }
 
-      const tx = await factory.createProject(
-        localFormFields.projectName,
-        companiesForSubmit.map((c) => c.name),
-        companiesForSubmit.map((c) => c.weight),
-        minRaise,
-        deadlineTs,
-        localFormFields.withdrawAddress,
-        raiseFeeBps,
-        profitFeeBps
-      );
+      const hash = await writeFactory.createProject(walletClient, {
+        projectName,
+        companyNames: companies.map((c) => c.name),
+        companyWeights: companies.map((c) => BigInt(c.weight)),
+        minimumRaise: minRaise,
+        deadline: BigInt(deadlineTs),
+        withdrawAddress: withdrawAddress as `0x${string}`,
+        raiseFeeBps: BigInt(raiseFeeBps),
+        profitFeeBps: BigInt(profitFeeBps),
+      });
 
-      await tx.wait();
+      await publicClient.waitForTransactionReceipt({ hash });
       setMessage("Project created! Refresh home to see it.");
     } catch (err) {
       console.error(err);

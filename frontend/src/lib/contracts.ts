@@ -1,73 +1,168 @@
-import { Contract } from "ethers";
-import type { BrowserProvider, JsonRpcProvider, Signer } from "ethers";
+import { getContract } from "viem";
 import { FACTORY_ADDRESS, START_BLOCK, USDC_ADDRESS } from "../config";
 import {
   basketVaultAbi,
   erc20Abi,
   minestartersFactoryAbi,
 } from "../contracts/abis";
+import { publicClient, type WalletClientWithAccount } from "./wagmi";
 import type { ProjectInfo, UserPosition } from "../types";
 
-type Connection = BrowserProvider | JsonRpcProvider | Signer;
+// Read-only contract getters (use publicClient)
+export const getVaultRead = (address: `0x${string}`) =>
+  getContract({
+    address,
+    abi: basketVaultAbi,
+    client: publicClient,
+  });
 
-export const getFactory = (provider: Connection) =>
-  new Contract(FACTORY_ADDRESS, minestartersFactoryAbi, provider);
+export const getUsdcRead = () =>
+  getContract({
+    address: USDC_ADDRESS as `0x${string}`,
+    abi: erc20Abi,
+    client: publicClient,
+  });
 
-export const getVault = (address: string, provider: Connection) =>
-  new Contract(address, basketVaultAbi, provider);
+export const getFactoryRead = () =>
+  getContract({
+    address: FACTORY_ADDRESS as `0x${string}`,
+    abi: minestartersFactoryAbi,
+    client: publicClient,
+  });
 
-export const getUsdc = (provider: Connection) =>
-  new Contract(USDC_ADDRESS, erc20Abi, provider);
+// Write helpers using writeContract directly
+export const writeFactory = {
+  createProject: async (
+    walletClient: WalletClientWithAccount,
+    args: {
+      projectName: string;
+      companyNames: string[];
+      companyWeights: bigint[];
+      minimumRaise: bigint;
+      deadline: bigint;
+      withdrawAddress: `0x${string}`;
+      raiseFeeBps: bigint;
+      profitFeeBps: bigint;
+    }
+  ) => {
+    return walletClient.writeContract({
+      address: FACTORY_ADDRESS as `0x${string}`,
+      abi: minestartersFactoryAbi,
+      functionName: "createProject",
+      args: [
+        args.projectName,
+        args.companyNames,
+        args.companyWeights,
+        args.minimumRaise,
+        args.deadline,
+        args.withdrawAddress,
+        args.raiseFeeBps,
+        args.profitFeeBps,
+      ],
+    });
+  },
+};
 
-const normalizeWeights = (weights: bigint[]) => weights.map((w) => Number(w));
+export const writeVault = {
+  deposit: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`, amount: bigint) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "deposit",
+      args: [amount],
+    });
+  },
+  claimProfit: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "claimProfit",
+    });
+  },
+  refund: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "refund",
+    });
+  },
+  withdrawRaisedFunds: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "withdrawRaisedFunds",
+    });
+  },
+  depositProfit: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`, amount: bigint) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "depositProfit",
+      args: [amount],
+    });
+  },
+};
+
+export const writeUsdc = {
+  approve: async (walletClient: WalletClientWithAccount, spender: `0x${string}`, amount: bigint) => {
+    return walletClient.writeContract({
+      address: USDC_ADDRESS as `0x${string}`,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [spender, amount],
+    });
+  },
+  mint: async (walletClient: WalletClientWithAccount, to: `0x${string}`, amount: bigint) => {
+    return walletClient.writeContract({
+      address: USDC_ADDRESS as `0x${string}`,
+      abi: erc20Abi,
+      functionName: "mint",
+      args: [to, amount],
+    });
+  },
+};
+
+const normalizeWeights = (weights: readonly bigint[]) => weights.map((w) => Number(w));
 
 export const fetchProjectInfo = async (
-  address: string,
-  provider: BrowserProvider | JsonRpcProvider
+  address: `0x${string}`
 ): Promise<ProjectInfo> => {
-  const vault = getVault(address, provider);
-  const info = await vault.getProjectInfo();
+  const vault = getVaultRead(address);
+  const info = await vault.read.getProjectInfo();
+  
   let accruedRaiseFees: bigint = 0n;
   try {
-    accruedRaiseFees = await vault.accruedRaiseFees();
+    accruedRaiseFees = await vault.read.accruedRaiseFees();
   } catch {
     // older ABI; fall back to zero if method not present
   }
+  
   let withdrawnTotal = 0n;
   let hasWithdrawnValue = false;
   try {
-    const withdrawnResult = await vault.withdrawnPrincipal?.();
+    const withdrawnResult = await vault.read.withdrawnPrincipal();
     if (withdrawnResult != null) {
-      withdrawnTotal =
-        typeof withdrawnResult === "bigint" ? withdrawnResult : BigInt(withdrawnResult);
+      withdrawnTotal = withdrawnResult;
       hasWithdrawnValue = true;
     }
   } catch {
     // method may not exist on older deployments
   }
+  
   let withdrawable = 0n;
   let withdrawableFees = accruedRaiseFees;
   try {
-    const withdrawableResult = await vault.withdrawableFunds();
-    if (typeof withdrawableResult === "bigint") {
-      withdrawable = withdrawableResult;
-    } else {
-      const asObj = withdrawableResult as any;
-      const legacyValue = asObj?.principal ?? asObj?.[0];
-      const feeValue = asObj?.fees ?? asObj?.[1];
-      withdrawable = legacyValue != null ? BigInt(legacyValue) : 0n;
-      if (feeValue != null) {
-        withdrawableFees = BigInt(feeValue);
-      }
-    }
+    const [principal, fees] = await vault.read.withdrawableFunds();
+    withdrawable = principal;
+    withdrawableFees = fees;
   } catch {
-    const raised = info.raised as bigint;
+    const raised = info[10]; // raised
     if (hasWithdrawnValue) {
       const available = raised > withdrawnTotal ? raised - withdrawnTotal : 0n;
       withdrawable = available > accruedRaiseFees ? available - accruedRaiseFees : 0n;
       withdrawableFees = available > accruedRaiseFees ? accruedRaiseFees : available;
     } else {
-      const minimumRaise = info.minRaise as bigint;
+      const minimumRaise = info[6]; // minRaise
       if (raised >= minimumRaise) {
         withdrawable = raised > accruedRaiseFees ? raised - accruedRaiseFees : 0n;
         withdrawableFees = raised > accruedRaiseFees ? accruedRaiseFees : raised;
@@ -77,62 +172,54 @@ export const fetchProjectInfo = async (
 
   return {
     address,
-    name: info.projectName,
-    companyNames: info.companies,
-    companyWeights: normalizeWeights(info.weights),
-    shareToken: info.shareTokenAddress,
-    creator: info.projectCreator,
-    withdrawAddress: info.projectWithdrawAddress,
-    minimumRaise: info.minRaise,
-    deadline: info.projectDeadline,
-    raiseFeeBps: Number(info.raiseFee),
-    profitFeeBps: Number(info.profitFee),
-    totalRaised: info.raised,
+    name: info[0], // projectName
+    companyNames: [...info[1]], // companies
+    companyWeights: normalizeWeights(info[2]), // weights
+    shareToken: info[3], // shareTokenAddress
+    creator: info[4], // projectCreator
+    withdrawAddress: info[5], // projectWithdrawAddress
+    minimumRaise: info[6], // minRaise
+    deadline: info[7], // projectDeadline
+    raiseFeeBps: Number(info[8]), // raiseFee
+    profitFeeBps: Number(info[9]), // profitFee
+    totalRaised: info[10], // raised
     accruedRaiseFees,
-    totalProfit: info.profit,
-    totalRaiseFeesPaid: info.raiseFeesPaid ?? 0n,
-    totalProfitFeesPaid: info.profitFeesPaid ?? 0n,
-    profitPerShare: info.currentProfitPerShare,
-    finalized: info.isFinalized,
+    totalProfit: info[11], // profit
+    totalRaiseFeesPaid: info[12] ?? 0n, // raiseFeesPaid
+    totalProfitFeesPaid: info[13] ?? 0n, // profitFeesPaid
+    profitPerShare: info[14], // currentProfitPerShare
+    finalized: info[15], // isFinalized
     withdrawable,
     withdrawableFees,
     withdrawnTotal,
-    stage: Number(info.stage) as ProjectInfo["stage"],
+    stage: Number(info[16]) as ProjectInfo["stage"], // stage
   };
 };
 
 const normalizeAddress = (address: string) => address.trim().toLowerCase();
 
-// Generic helper to fetch events in chunks
-const fetchEventsInChunks = async (
-  vault: Contract,
-  eventName: string,
-  provider: BrowserProvider | JsonRpcProvider,
-  chunkSize = 10000
-) => {
-  const fromBlock = START_BLOCK;
-  const currentBlock = await provider.getBlockNumber();
-  const allEvents = [];
-
-  for (let start = fromBlock; start <= currentBlock; start += chunkSize) {
-    const end = Math.min(start + chunkSize - 1, currentBlock);
-    const events = await vault.queryFilter(eventName, start, end);
-    allEvents.push(...events);
-  }
-
-  return allEvents;
-};
-
 export const fetchSupporterCount = async (
-  projectAddress: string,
-  provider: BrowserProvider | JsonRpcProvider
+  projectAddress: `0x${string}`
 ): Promise<number> => {
-  const vault = getVault(projectAddress, provider);
-  const events = await fetchEventsInChunks(vault, "Deposited", provider);
+  const currentBlock = await publicClient.getBlockNumber();
+  const logs = await publicClient.getLogs({
+    address: projectAddress,
+    event: {
+      type: "event",
+      name: "Deposited",
+      inputs: [
+        { indexed: true, name: "user", type: "address" },
+        { indexed: false, name: "amount", type: "uint256" },
+        { indexed: false, name: "shares", type: "uint256" },
+      ],
+    },
+    fromBlock: BigInt(START_BLOCK),
+    toBlock: currentBlock,
+  });
 
   const uniqueDepositors = new Set<string>();
-  for (const event of events) {
-    const user = (event as any)?.args?.user as string | undefined;
+  for (const log of logs) {
+    const user = log.args.user;
     if (user) uniqueDepositors.add(normalizeAddress(user));
   }
 
@@ -140,56 +227,68 @@ export const fetchSupporterCount = async (
 };
 
 export const fetchTotalClaimed = async (
-  projectAddress: string,
-  provider: BrowserProvider | JsonRpcProvider
+  projectAddress: `0x${string}`
 ): Promise<bigint> => {
-  const vault = getVault(projectAddress, provider);
-  const events = await fetchEventsInChunks(vault, "ProfitClaimed", provider);
+  const currentBlock = await publicClient.getBlockNumber();
+  const logs = await publicClient.getLogs({
+    address: projectAddress,
+    event: {
+      type: "event",
+      name: "ProfitClaimed",
+      inputs: [
+        { indexed: true, name: "user", type: "address" },
+        { indexed: false, name: "amount", type: "uint256" },
+      ],
+    },
+    fromBlock: BigInt(START_BLOCK),
+    toBlock: currentBlock,
+  });
 
-  return events.reduce((sum, event) => {
-    const amount = (event as any)?.args?.amount as bigint | undefined;
-    return amount != null ? sum + BigInt(amount) : sum;
+  return logs.reduce((sum, log) => {
+    const amount = log.args.amount;
+    return amount != null ? sum + amount : sum;
   }, 0n);
 };
 
 export const fetchUserPosition = async (
   project: ProjectInfo,
-  user: string,
-  provider: BrowserProvider | JsonRpcProvider
+  user: `0x${string}`
 ): Promise<UserPosition> => {
-  const vault = getVault(project.address, provider);
-  const [userInfo, pending] = await Promise.all([
-    vault.getUserInfo(user),
-    vault.pendingProfit(user),
-  ]);
-  const shareToken = new Contract(project.shareToken, erc20Abi, provider);
-  const [usdcBalance, shareBalance] = await Promise.all([
-    getUsdc(provider).balanceOf(user),
-    shareToken.balanceOf(user),
+  const vault = getVaultRead(project.address as `0x${string}`);
+  const usdc = getUsdcRead();
+  const shareToken = getContract({
+    address: project.shareToken as `0x${string}`,
+    abi: erc20Abi,
+    client: publicClient,
+  });
+
+  const [userInfo, pending, usdcBalance, shareBalance] = await Promise.all([
+    vault.read.getUserInfo([user]),
+    vault.read.pendingProfit([user]),
+    usdc.read.balanceOf([user]),
+    shareToken.read.balanceOf([user]),
   ]);
 
   return {
-    shares: userInfo.shares,
-    claimed: userInfo.totalClaimed,
+    shares: userInfo[0],
+    claimed: userInfo[1],
     pending,
     usdcBalance,
     shareBalance,
   };
 };
 
-// TODO: switch to indexer
-export const fetchProjectAddresses = async (
-  provider: BrowserProvider | JsonRpcProvider
-): Promise<string[]> => {
-  const factory = getFactory(provider);
+export const fetchProjectAddresses = async (): Promise<`0x${string}`[]> => {
+  const factory = getFactoryRead();
 
   try {
-    return await factory.getAllProjects();
+    const addresses = await factory.read.getAllProjects();
+    return [...addresses];
   } catch {
-    const count: bigint = await factory.getProjectCount();
-    const addresses: string[] = [];
+    const count = await factory.read.getProjectCount();
+    const addresses: `0x${string}`[] = [];
     for (let i = 0n; i < count; i++) {
-      const addr = await factory.getProjectAt(i);
+      const addr = await factory.read.getProjectAt([i]);
       addresses.push(addr);
     }
     return addresses;
