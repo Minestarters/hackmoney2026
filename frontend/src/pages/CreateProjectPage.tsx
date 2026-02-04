@@ -7,9 +7,35 @@ import {
   createYellowSessionManager,
   runYellowMultiPartySession,
   type YellowSessionState,
+  type BasketState,
+  type ProjectFormFields,
 } from "../lib/yellowSession";
 
 type CompanyInput = { name: string; weight: number };
+
+// Helper to calculate weights from basket stakes
+const calculateWeightsFromBasket = (basket: BasketState): { name: string; weight: number }[] => {
+  const totalStakes: Record<string, number> = {};
+  let grandTotal = 0;
+
+  // Sum up all stakes per company
+  for (const company of basket.companies) {
+    const companyStakes = basket.stakes[company] || {};
+    const total = Object.values(companyStakes).reduce((sum, amt) => sum + parseFloat(amt || "0"), 0);
+    totalStakes[company] = total;
+    grandTotal += total;
+  }
+
+  // Convert to weights (percentages)
+  if (grandTotal === 0) {
+    return basket.companies.map(name => ({ name, weight: 0 }));
+  }
+
+  return basket.companies.map(name => ({
+    name,
+    weight: Math.round((totalStakes[name] / grandTotal) * 100),
+  }));
+};
 
 const toDateInputValue = (date: Date) => {
   const year = date.getFullYear();
@@ -38,16 +64,6 @@ const shortAddress = (addr: string) =>
 
 const CreateProjectPage = () => {
   const { signer, connect, account } = useWallet();
-  const [projectName, setProjectName] = useState("");
-  const [minimumRaise, setMinimumRaise] = useState("1000");
-  const [deadline, setDeadline] = useState(() => toDateInputValue(addDays(new Date(), 30)));
-  const [raiseFeePct, setRaiseFeePct] = useState("0.05");
-  const [profitFeePct, setProfitFeePct] = useState("0.01");
-  const [withdrawAddress, setWithdrawAddress] = useState("");
-  const [companies, setCompanies] = useState<CompanyInput[]>([
-    { name: "Company A", weight: 50 },
-    { name: "Company B", weight: 50 },
-  ]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -56,9 +72,24 @@ const CreateProjectPage = () => {
   const [yellowError, setYellowError] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<YellowSessionState>({ status: "idle" });
   const [inviteCode, setInviteCode] = useState("");
-  const [transferAmount, setTransferAmount] = useState("0.10");
   const [legacyRunning, setLegacyRunning] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Collaborative basket state
+  const [newCompanyName, setNewCompanyName] = useState("");
+  const [newCompanyStake, setNewCompanyStake] = useState("10");
+  const [topUpAmounts, setTopUpAmounts] = useState<Record<string, string>>({});
+
+  // Local form fields state (for typing without network lag)
+  const defaultFormFields: ProjectFormFields = {
+    projectName: "",
+    minimumRaise: "1000",
+    deadline: toDateInputValue(addDays(new Date(), 30)),
+    raiseFeePct: "0.05",
+    profitFeePct: "0.01",
+    withdrawAddress: "",
+  };
+  const [localFormFields, setLocalFormFields] = useState<ProjectFormFields>(defaultFormFields);
 
   const appendLog = useCallback((line: string) => {
     setYellowLogs((prev) => [...prev, line].slice(-100));
@@ -69,22 +100,43 @@ const CreateProjectPage = () => {
     [appendLog]
   );
 
+  // Sync local form fields from session state when it changes (incoming updates)
   useEffect(() => {
-    if (account && !withdrawAddress) {
-      setWithdrawAddress(account);
+    const remoteFields = sessionState.basket?.formFields;
+    if (remoteFields) {
+      setLocalFormFields((prev) => ({
+        projectName: remoteFields.projectName || prev.projectName,
+        minimumRaise: remoteFields.minimumRaise || prev.minimumRaise,
+        deadline: remoteFields.deadline || prev.deadline,
+        raiseFeePct: remoteFields.raiseFeePct || prev.raiseFeePct,
+        profitFeePct: remoteFields.profitFeePct || prev.profitFeePct,
+        withdrawAddress: remoteFields.withdrawAddress || prev.withdrawAddress,
+      }));
     }
-  }, [account, withdrawAddress]);
+  }, [sessionState.basket?.formFields]);
 
-  const handleCompanyChange = (index: number, field: keyof CompanyInput, value: string) => {
-    setCompanies((prev) =>
-      prev.map((entry, i) =>
-        i === index ? { ...entry, [field]: field === "weight" ? Number(value) : value } : entry
-      )
-    );
+  // Initialize withdraw address from connected account
+  useEffect(() => {
+    if (account && !localFormFields.withdrawAddress) {
+      setLocalFormFields((prev) => ({ ...prev, withdrawAddress: account }));
+    }
+  }, [account, localFormFields.withdrawAddress]);
+
+  // Update local field (instant, no network)
+  const handleLocalFieldChange = (field: keyof ProjectFormFields, value: string) => {
+    setLocalFormFields((prev) => ({ ...prev, [field]: value }));
   };
 
-  const addCompanyRow = () => {
-    setCompanies((prev) => [...prev, { name: "", weight: 0 }]);
+  // Sync field to network on blur (only when session is active)
+  const handleFieldBlur = async (field: keyof ProjectFormFields) => {
+    if (sessionState.status === "active") {
+      try {
+        await sessionManager.updateFormField(field, localFormFields[field]);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to sync field";
+        setYellowError(msg);
+      }
+    }
   };
 
   // Yellow Session Handlers - Creator Flow
@@ -111,15 +163,6 @@ const CreateProjectPage = () => {
       await sessionManager.joinWithInvite(inviteCode.trim());
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to join session";
-      setYellowError(msg);
-    }
-  };
-
-  const handleTransfer = async (toUser: "user1" | "user2") => {
-    try {
-      await sessionManager.transfer(transferAmount, toUser);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Transfer failed";
       setYellowError(msg);
     }
   };
@@ -172,6 +215,60 @@ const CreateProjectPage = () => {
     }
   };
 
+  // Collaborative basket handlers
+  const handleAddCompany = async () => {
+    if (sessionState.status !== "active") {
+      setYellowError("Wait for the other user to join before adding companies");
+      return;
+    }
+    if (!newCompanyName.trim()) {
+      setYellowError("Enter a company name");
+      return;
+    }
+    if (!newCompanyStake || parseFloat(newCompanyStake) <= 0) {
+      setYellowError("Enter a valid initial stake amount");
+      return;
+    }
+    setYellowError(null);
+    try {
+      await sessionManager.addCompany(newCompanyName.trim(), newCompanyStake);
+      setNewCompanyName("");
+      setNewCompanyStake("10");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to add company";
+      setYellowError(msg);
+    }
+  };
+
+  const handleTopUp = async (companyName: string) => {
+    if (sessionState.status !== "active") {
+      setYellowError("Wait for the other user to join before topping up");
+      return;
+    }
+    const amount = topUpAmounts[companyName];
+    if (!amount || parseFloat(amount) <= 0) {
+      setYellowError("Enter a valid top-up amount");
+      return;
+    }
+    setYellowError(null);
+    try {
+      await sessionManager.stakeInCompany(companyName, amount);
+      setTopUpAmounts((prev) => ({ ...prev, [companyName]: "" }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to top up stake";
+      setYellowError(msg);
+    }
+  };
+
+  const getCompanyTotalStake = (companyName: string): number => {
+    const stakes = sessionState.basket?.stakes[companyName] || {};
+    return Object.values(stakes).reduce((sum, amt) => sum + parseFloat(amt || "0"), 0);
+  };
+
+  const getUserStake = (companyName: string, userAddr: string): string => {
+    return sessionState.basket?.stakes[companyName]?.[userAddr] || "0";
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
@@ -181,9 +278,27 @@ const CreateProjectPage = () => {
       return;
     }
 
-    const totalWeight = companies.reduce((sum, c) => sum + c.weight, 0);
+    if (!isActive || !sessionState.basket) {
+      setMessage("Join a session first");
+      return;
+    }
+
+    // Get companies from collaborative basket
+    const companiesForSubmit = calculateWeightsFromBasket(sessionState.basket);
+
+    if (companiesForSubmit.length === 0) {
+      setMessage("Add at least one company");
+      return;
+    }
+
+    const totalWeight = companiesForSubmit.reduce((sum, c) => sum + c.weight, 0);
     if (totalWeight !== 100) {
-      setMessage("Weights must sum to 100%");
+      setMessage(`Weights must sum to 100% (currently ${totalWeight}%)`);
+      return;
+    }
+
+    if (!localFormFields.projectName) {
+      setMessage("Enter a project name");
       return;
     }
 
@@ -195,15 +310,15 @@ const CreateProjectPage = () => {
     try {
       setSubmitting(true);
       const factory = new Contract(FACTORY_ADDRESS, minestartersFactoryAbi, signer);
-      const minRaise = parseUnits(minimumRaise || "0", 6);
-      const deadlineTs = dateInputValueToUnixSeconds(deadline);
+      const minRaise = parseUnits(localFormFields.minimumRaise || "0", 6);
+      const deadlineTs = dateInputValueToUnixSeconds(localFormFields.deadline);
       if (!Number.isFinite(deadlineTs)) {
         setMessage("Select a valid deadline");
         setSubmitting(false);
         return;
       }
-      const raiseFeeBps = Math.round((parseFloat(raiseFeePct || "0") || 0) * 100);
-      const profitFeeBps = Math.round((parseFloat(profitFeePct || "0") || 0) * 100);
+      const raiseFeeBps = Math.round((parseFloat(localFormFields.raiseFeePct || "0") || 0) * 100);
+      const profitFeeBps = Math.round((parseFloat(localFormFields.profitFeePct || "0") || 0) * 100);
 
       if (raiseFeeBps > 10_000 || profitFeeBps > 10_000) {
         setMessage("Fees cannot exceed 100%");
@@ -212,12 +327,12 @@ const CreateProjectPage = () => {
       }
 
       const tx = await factory.createProject(
-        projectName,
-        companies.map((c) => c.name),
-        companies.map((c) => c.weight),
+        localFormFields.projectName,
+        companiesForSubmit.map((c) => c.name),
+        companiesForSubmit.map((c) => c.weight),
         minRaise,
         deadlineTs,
-        withdrawAddress,
+        localFormFields.withdrawAddress,
         raiseFeeBps,
         profitFeeBps
       );
@@ -238,6 +353,7 @@ const CreateProjectPage = () => {
   const isJoining = sessionState.status === "joining";
   const isActive = sessionState.status === "active";
   const isClosed = sessionState.status === "closed";
+  const canEditForm = isActive || isInviteReady; // Show form when active or waiting for joiner
 
   return (
     <div className="card-frame rounded-lg p-6">
@@ -393,61 +509,19 @@ const CreateProjectPage = () => {
               <p className="text-center font-mono text-[10px] text-stone-500">
                 {sessionState.appSessionId?.slice(0, 20)}...
               </p>
-            </div>
-
-            {/* Allocations */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded border border-sky-800 bg-sky-900/20 p-3 text-center">
-                <p className="text-[10px] text-stone-400">User 1 (Host)</p>
-                <p className="text-lg text-sky-300">{sessionState.allocations?.user1 || "0"}</p>
-                <p className="text-[10px] text-stone-500">ytest.usd</p>
-                <p className="mt-1 text-[9px] text-stone-500">
-                  {shortAddress(sessionState.user1Address || "")}
-                </p>
-              </div>
-              <div className="rounded border border-amber-800 bg-amber-900/20 p-3 text-center">
-                <p className="text-[10px] text-stone-400">User 2 (Joiner)</p>
-                <p className="text-lg text-amber-300">{sessionState.allocations?.user2 || "0"}</p>
-                <p className="text-[10px] text-stone-500">ytest.usd</p>
-                <p className="mt-1 text-[9px] text-stone-500">
-                  {shortAddress(sessionState.user2Address || "")}
-                </p>
-              </div>
-            </div>
-
-            {/* Transfer */}
-            <div className="rounded border-2 border-dirt/50 p-3">
-              <p className="mb-2 text-stone-300">Transfer funds</p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={transferAmount}
-                  onChange={(e) => setTransferAmount(e.target.value)}
-                  className="input-blocky w-24 rounded px-2 py-1 text-center"
-                  step="0.01"
-                  min="0"
-                />
-                <span className="text-[10px] text-stone-400">ytest.usd</span>
-                <div className="flex flex-1 justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleTransfer("user1")}
-                    className="rounded border border-sky-700 px-3 py-1 text-sky-300 hover:bg-sky-900/30"
-                  >
-                    → User 1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleTransfer("user2")}
-                    className="rounded border border-amber-700 px-3 py-1 text-amber-300 hover:bg-amber-900/30"
-                  >
-                    → User 2
-                  </button>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+                <div className="text-center">
+                  <p className="text-stone-500">Host</p>
+                  <p className="font-mono text-sky-300">{shortAddress(sessionState.user1Address || "")}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-stone-500">Joiner</p>
+                  <p className="font-mono text-amber-300">{shortAddress(sessionState.user2Address || "")}</p>
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
+            {/* Session Actions */}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -503,118 +577,235 @@ const CreateProjectPage = () => {
         )}
       </div>
 
-      {/* Project Creation Form */}
-      <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="space-y-2">
-            <span className="text-stone-300">Project name</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              required
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Withdraw address</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              value={withdrawAddress}
-              onChange={(e) => setWithdrawAddress(e.target.value)}
-              required
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Minimum raise (USDC)</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              value={minimumRaise}
-              onChange={(e) => setMinimumRaise(e.target.value)}
-              type="number"
-              min="0"
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Deadline</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              min={toDateInputValue(new Date())}
-              required
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Raise fee (%)</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              type="number"
-              step="0.01"
-              value={raiseFeePct}
-              onChange={(e) => setRaiseFeePct(e.target.value)}
-              min="0"
-              max="100"
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Profit fee (%)</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              type="number"
-              step="0.01"
-              value={profitFeePct}
-              onChange={(e) => setProfitFeePct(e.target.value)}
-              min="0"
-              max="100"
-            />
-          </label>
-        </div>
+      {/* Project Creation Form - Shown when session is active or invite ready */}
+      {canEditForm && sessionState.basket && (
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          {isActive ? (
+            <p className="text-[10px] text-green-400">
+              All fields below are collaboratively editable. Changes sync in real-time.
+            </p>
+          ) : (
+            <p className="text-[10px] text-yellow-400">
+              Start filling out the form. Changes will sync once the other user joins.
+            </p>
+          )}
 
-        <div className="rounded border-4 border-dirt p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-stone-300">Companies & weights</p>
-            <button type="button" onClick={addCompanyRow} className="button-blocky rounded px-3 py-1">
-              Add Row
-            </button>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-stone-300">Project name</span>
+              <input
+                className="input-blocky w-full rounded px-3 py-2"
+                value={localFormFields.projectName}
+                onChange={(e) => handleLocalFieldChange("projectName", e.target.value)}
+                onBlur={() => handleFieldBlur("projectName")}
+                placeholder="Enter project name"
+                required
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-stone-300">Withdraw address</span>
+              <input
+                className="input-blocky w-full rounded px-3 py-2"
+                value={localFormFields.withdrawAddress}
+                onChange={(e) => handleLocalFieldChange("withdrawAddress", e.target.value)}
+                onBlur={() => handleFieldBlur("withdrawAddress")}
+                placeholder="0x..."
+                required
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-stone-300">Minimum raise (USDC)</span>
+              <input
+                className="input-blocky w-full rounded px-3 py-2"
+                value={localFormFields.minimumRaise}
+                onChange={(e) => handleLocalFieldChange("minimumRaise", e.target.value)}
+                onBlur={() => handleFieldBlur("minimumRaise")}
+                type="number"
+                min="0"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-stone-300">Deadline</span>
+              <input
+                className="input-blocky w-full rounded px-3 py-2"
+                type="date"
+                value={localFormFields.deadline}
+                onChange={(e) => handleLocalFieldChange("deadline", e.target.value)}
+                onBlur={() => handleFieldBlur("deadline")}
+                min={toDateInputValue(new Date())}
+                required
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-stone-300">Raise fee (%)</span>
+              <input
+                className="input-blocky w-full rounded px-3 py-2"
+                type="number"
+                step="0.01"
+                value={localFormFields.raiseFeePct}
+                onChange={(e) => handleLocalFieldChange("raiseFeePct", e.target.value)}
+                onBlur={() => handleFieldBlur("raiseFeePct")}
+                min="0"
+                max="100"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-stone-300">Profit fee (%)</span>
+              <input
+                className="input-blocky w-full rounded px-3 py-2"
+                type="number"
+                step="0.01"
+                value={localFormFields.profitFeePct}
+                onChange={(e) => handleLocalFieldChange("profitFeePct", e.target.value)}
+                onBlur={() => handleFieldBlur("profitFeePct")}
+                min="0"
+                max="100"
+              />
+            </label>
           </div>
-          <div className="space-y-2">
-            {companies.map((company, idx) => (
-              <div key={idx} className="grid grid-cols-6 gap-2">
-                <input
-                  className="input-blocky col-span-4 rounded px-3 py-2"
-                  value={company.name}
-                  onChange={(e) => handleCompanyChange(idx, "name", e.target.value)}
-                  placeholder={`Company ${idx + 1}`}
-                  required
-                />
-                <input
-                  className="input-blocky col-span-2 rounded px-3 py-2"
-                  type="number"
-                  value={company.weight}
-                  min="0"
-                  max="100"
-                  onChange={(e) => handleCompanyChange(idx, "weight", e.target.value)}
-                  required
-                />
+
+          <div className="rounded border-4 border-dirt p-3">
+            <p className="mb-3 text-stone-300">Companies & weights</p>
+
+            <div className="space-y-3">
+              {/* Add new company - only enabled when session is active */}
+              <div className={`rounded border-2 p-3 ${isActive ? "border-green-800/50 bg-green-900/10" : "border-stone-700/50 bg-stone-900/10"}`}>
+                <p className={`mb-2 text-[10px] ${isActive ? "text-green-300" : "text-stone-400"}`}>
+                  Add a company {!isActive && "(waiting for other user)"}
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    className="input-blocky flex-1 rounded px-3 py-2"
+                    value={newCompanyName}
+                    onChange={(e) => setNewCompanyName(e.target.value)}
+                    placeholder="Company name"
+                    disabled={!isActive}
+                  />
+                  <input
+                    className="input-blocky w-24 rounded px-3 py-2 text-center"
+                    type="number"
+                    value={newCompanyStake}
+                    onChange={(e) => setNewCompanyStake(e.target.value)}
+                    placeholder="Stake"
+                    min="0.01"
+                    step="0.01"
+                    disabled={!isActive}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCompany}
+                    className="button-blocky rounded px-4 py-2"
+                    disabled={!isActive}
+                  >
+                    Add
+                  </button>
+                </div>
+                <p className="mt-1 text-[10px] text-stone-500">
+                  {isActive ? "Initial stake in USDC. Others can see and top up." : "Share the invite code so the other user can join."}
+                </p>
               </div>
-            ))}
+
+              {/* List of companies with stakes */}
+              {sessionState.basket.companies.length > 0 ? (
+                <div className="space-y-2">
+                  {sessionState.basket.companies.map((companyName) => {
+                    const user1Stake = getUserStake(companyName, sessionState.user1Address || "");
+                    const user2Stake = getUserStake(companyName, sessionState.user2Address || "");
+                    const totalStake = getCompanyTotalStake(companyName);
+                    const basketWeights = calculateWeightsFromBasket(sessionState.basket!);
+                    const weight = basketWeights.find(w => w.name === companyName)?.weight || 0;
+
+                    return (
+                      <div key={companyName} className="rounded border border-dirt bg-black/20 p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <p className="font-medium text-stone-200">{companyName}</p>
+                          <span className="rounded bg-sky-900/50 px-2 py-0.5 text-[10px] text-sky-300">
+                            {weight}% weight
+                          </span>
+                        </div>
+                        <div className="mb-2 grid grid-cols-3 gap-2 text-[10px]">
+                          <div>
+                            <p className="text-stone-500">Host stake</p>
+                            <p className="text-sky-300">${user1Stake}</p>
+                          </div>
+                          <div>
+                            <p className="text-stone-500">Joiner stake</p>
+                            <p className="text-amber-300">${user2Stake}</p>
+                          </div>
+                          <div>
+                            <p className="text-stone-500">Total</p>
+                            <p className="text-green-300">${totalStake.toFixed(2)}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            className="input-blocky w-20 rounded px-2 py-1 text-center text-[10px]"
+                            type="number"
+                            value={topUpAmounts[companyName] || ""}
+                            onChange={(e) =>
+                              setTopUpAmounts((prev) => ({
+                                ...prev,
+                                [companyName]: e.target.value,
+                              }))
+                            }
+                            placeholder="Amount"
+                            min="0.01"
+                            step="0.01"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleTopUp(companyName)}
+                            className="rounded border border-green-700 px-2 py-1 text-[10px] text-green-300 hover:bg-green-900/30"
+                          >
+                            + Top Up
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="py-4 text-center text-[10px] text-stone-500">
+                  No companies yet. Add one above to start building the basket.
+                </p>
+              )}
+
+              {/* Summary */}
+              {sessionState.basket.companies.length > 0 && (
+                <div className="rounded bg-stone-800/50 p-2 text-[10px]">
+                  <p className="text-stone-400">
+                    Total weight:{" "}
+                    <span className="text-stone-200">
+                      {calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0)}%
+                    </span>
+                    {" | "}
+                    Companies: <span className="text-stone-200">{sessionState.basket.companies.length}</span>
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
-          <p className="mt-2 text-[10px] text-stone-400">
-            Weights must sum to 100%. Fees entered as percentages (e.g. 2.5 = 2.5% = 250 bps).
+
+          {message && <p className="text-[10px] text-sky-200">{message}</p>}
+
+          <button
+            type="submit"
+            className="button-blocky rounded px-4 py-3 text-xs uppercase"
+            disabled={submitting}
+          >
+            {submitting ? "Deploying..." : "Create project"}
+          </button>
+        </form>
+      )}
+
+      {/* Message when no session is active */}
+      {!canEditForm && (
+        <div className="rounded border-4 border-dirt/50 bg-stone-900/30 p-6 text-center">
+          <p className="text-stone-400">
+            Join or create a Yellow Network session above to start building a project collaboratively.
           </p>
         </div>
-
-        {message && <p className="text-[10px] text-sky-200">{message}</p>}
-
-        <button
-          type="submit"
-          className="button-blocky rounded px-4 py-3 text-xs uppercase"
-          disabled={submitting}
-        >
-          {submitting ? "Deploying..." : "Create project"}
-        </button>
-      </form>
+      )}
     </div>
   );
 };
