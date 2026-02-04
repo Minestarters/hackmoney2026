@@ -1,6 +1,6 @@
 /**
- * Multi-Party Application Session
- * Based on: https://github.com/stevenzeiler/yellow-sdk-tutorials/blob/main/scripts/app_sessions/app_session_two_signers.ts
+ * Yellow Network Session Manager
+ * Cross-device support using signed session invites
  */
 
 import {
@@ -13,6 +13,7 @@ import {
   createSubmitAppStateMessage,
   RPCMethod,
   RPCProtocolVersion,
+  type MessageSigner,
   type RPCAppDefinition,
   type RPCAppSessionAllocation,
   type RPCData,
@@ -31,18 +32,69 @@ import {
   YELLOW_WALLET_2_SEED_PHRASE,
 } from "../config";
 
-type Logger = (line: string) => void;
+// ============================================================================
+// Types
+// ============================================================================
+
+export type Logger = (line: string) => void;
 
 type SessionKey = {
   privateKey: `0x${string}`;
   address: `0x${string}`;
 };
 
+export type SessionInvite = {
+  creatorAddress: `0x${string}`;
+  joinerAddress: `0x${string}`;
+  req: RPCData;
+  sig: string[];
+  nonce: number;
+};
+
+export type YellowSessionState = {
+  status: "idle" | "connecting" | "invite_ready" | "joining" | "active" | "closed" | "error";
+  role?: "creator" | "joiner";
+  user1Address?: `0x${string}`;
+  user2Address?: `0x${string}`;
+  appSessionId?: `0x${string}`;
+  allocations?: { user1: string; user2: string };
+  invite?: string; // Base64 encoded invite for sharing
+  error?: string;
+};
+
+export type YellowSessionManager = {
+  state: YellowSessionState;
+  // Creator flow - creates invite automatically using predefined User 2 address
+  createSession: () => Promise<string>;
+  // Joiner flow  
+  joinWithInvite: (inviteCode: string) => Promise<void>;
+  // Session operations
+  transfer: (amount: string, toUser: "user1" | "user2") => Promise<void>;
+  closeSession: () => Promise<void>;
+  disconnect: () => void;
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
 const logLine = (logger: Logger | undefined, line: string) => {
   if (logger) {
     logger(line);
   }
   console.log(line);
+};
+
+const encodeInvite = (invite: SessionInvite): string => {
+  return btoa(JSON.stringify(invite));
+};
+
+const decodeInvite = (code: string): SessionInvite => {
+  try {
+    return JSON.parse(atob(code)) as SessionInvite;
+  } catch {
+    throw new Error("Invalid invite code");
+  }
 };
 
 const waitForResponse = (
@@ -87,7 +139,7 @@ const authenticateWallet = async (
     Math.floor((Date.now() + YELLOW_SESSION_EXPIRES_MS) / 1000)
   );
 
-  const allowances = [{ asset: "ytest.usd", amount: "0.01" }];
+  const allowances = [{ asset: "ytest.usd", amount: "10" }];
 
   const authRequest = await createAuthRequestMessage({
     address,
@@ -136,6 +188,453 @@ const authenticateWallet = async (
   return sessionKey;
 };
 
+// ============================================================================
+// Session Manager Factory
+// ============================================================================
+
+export const createYellowSessionManager = (
+  onStateChange: (state: YellowSessionState) => void,
+  logger?: Logger
+): YellowSessionManager => {
+  let state: YellowSessionState = { status: "idle" };
+  let yellowClient: Client | null = null;
+  let messageSigner: MessageSigner | null = null;
+  let currentAppSessionId: `0x${string}` | null = null;
+  let user1Addr: `0x${string}` | null = null;
+  let user2Addr: `0x${string}` | null = null;
+  let sessionNonce: number = 0;
+
+  const setState = (newState: Partial<YellowSessionState>) => {
+    state = { ...state, ...newState };
+    onStateChange(state);
+  };
+
+  const connectToYellow = async (): Promise<Client> => {
+    if (yellowClient) return yellowClient;
+    
+    logLine(logger, "Connecting to Yellow clearnet...");
+    yellowClient = new Client({
+      url: "wss://clearnet-sandbox.yellow.com/ws",
+    });
+    await yellowClient.connect();
+    logLine(logger, "Connected to Yellow clearnet.");
+    return yellowClient;
+  };
+
+  // ========== CREATOR FLOW ==========
+  
+  // Creator creates session and invite using predefined User 2 address
+  const createSession = async (): Promise<string> => {
+    if (!YELLOW_WALLET_1_SEED_PHRASE) {
+      throw new Error("Missing VITE_WALLET_1_SEED_PHRASE");
+    }
+    if (!YELLOW_WALLET_2_SEED_PHRASE) {
+      throw new Error("Missing VITE_WALLET_2_SEED_PHRASE");
+    }
+
+    setState({ status: "connecting", role: "creator" });
+
+    try {
+      const client = await connectToYellow();
+
+      // Get User 1's wallet
+      const walletClient = createWalletClient({
+        account: mnemonicToAccount(YELLOW_WALLET_1_SEED_PHRASE),
+        chain: baseSepolia,
+        transport: http(),
+      });
+
+      // Derive User 2's address from seed phrase
+      const wallet2Account = mnemonicToAccount(YELLOW_WALLET_2_SEED_PHRASE);
+      const joinerAddr = wallet2Account.address as `0x${string}`;
+
+      logLine(logger, "Authenticating as session creator...");
+      const sessionKey = await authenticateWallet(client, walletClient, logger);
+      messageSigner = createECDSAMessageSigner(sessionKey.privateKey);
+
+      const userAddress = walletClient.account?.address as `0x${string}`;
+      user1Addr = userAddress;
+      user2Addr = joinerAddr;
+      sessionNonce = Date.now();
+
+      logLine(logger, `User 1: ${userAddress}`);
+      logLine(logger, `User 2: ${joinerAddr}`);
+      logLine(logger, `Creating invite...`);
+
+      const appDefinition: RPCAppDefinition = {
+        protocol: RPCProtocolVersion.NitroRPC_0_4,
+        participants: [user1Addr, joinerAddr],
+        weights: [50, 50],
+        quorum: 100,
+        challenge: 0,
+        nonce: sessionNonce,
+        application: YELLOW_APPLICATION,
+      };
+
+      const initialAllocations = [
+        { participant: user1Addr, asset: "ytest.usd", amount: "1.00" },
+        { participant: joinerAddr, asset: "ytest.usd", amount: "0.00" },
+      ] as RPCAppSessionAllocation[];
+
+      // Creator signs the session message
+      const sessionMessage = await createAppSessionMessage(messageSigner, {
+        definition: appDefinition,
+        allocations: initialAllocations,
+      });
+
+      const parsed = JSON.parse(sessionMessage) as { req: RPCData; sig: string[] };
+
+      const invite: SessionInvite = {
+        creatorAddress: user1Addr,
+        joinerAddress: joinerAddr,
+        req: parsed.req,
+        sig: parsed.sig,
+        nonce: sessionNonce,
+      };
+
+      const inviteCode = encodeInvite(invite);
+
+      setState({
+        status: "invite_ready",
+        user1Address: userAddress,
+        user2Address: joinerAddr,
+        invite: inviteCode,
+      });
+
+      logLine(logger, `Invite created! Share the code with User 2.`);
+      logLine(logger, `Waiting for User 2 to join...`);
+
+      // Poll for session creation since Yellow doesn't broadcast to creator
+      let pollCount = 0;
+      const maxPolls = 60; // Poll for max 2 minutes
+      
+      const pollForSession = async () => {
+        pollCount++;
+        logLine(logger, `Polling for session... (${pollCount}/${maxPolls})`);
+        
+        if (state.status !== "invite_ready") {
+          logLine(logger, `Stopping poll - status changed to ${state.status}`);
+          return;
+        }
+        if (!yellowClient || !messageSigner) {
+          logLine(logger, `Stopping poll - no client or signer`);
+          return;
+        }
+        if (pollCount > maxPolls) {
+          logLine(logger, `Stopping poll - max attempts reached`);
+          return;
+        }
+        
+        try {
+          // Request app sessions
+          const reqId = Date.now();
+          const reqData: RPCData = [reqId, RPCMethod.GetAppSessions, {}, reqId];
+          const sig = await messageSigner(reqData);
+          
+          const getSessionsReq = JSON.stringify({
+            req: reqData,
+            sig: [sig],
+          });
+          
+          logLine(logger, `Sending get_app_sessions request...`);
+          const response = await yellowClient.sendMessage(getSessionsReq) as RPCResponse;
+          logLine(logger, `Got response: ${JSON.stringify(response).slice(0, 500)}`);
+          
+          // Yellow returns appSessions (camelCase)
+          const params = response.params as { 
+            appSessions?: Array<{ 
+              appSessionId: `0x${string}`; 
+              participants?: string[];
+              allocations?: Array<{ participant: string; asset: string; amount: string }> 
+            }> 
+          } | undefined;
+          
+          if (params?.appSessions && params.appSessions.length > 0) {
+            logLine(logger, `Found ${params.appSessions.length} session(s)`);
+            
+            // Find a session with our participants
+            for (const session of params.appSessions) {
+              logLine(logger, `Checking session ${session.appSessionId}: participants=${JSON.stringify(session.participants)}, allocations=${JSON.stringify(session.allocations)}`);
+              
+              // Check by participants array or allocations
+              let hasUser1 = false;
+              let hasUser2 = false;
+              
+              if (session.participants) {
+                hasUser1 = session.participants.some(p => p.toLowerCase() === user1Addr?.toLowerCase());
+                hasUser2 = session.participants.some(p => p.toLowerCase() === user2Addr?.toLowerCase());
+              }
+              
+              if (session.allocations) {
+                hasUser1 = hasUser1 || session.allocations.some(a => a.participant.toLowerCase() === user1Addr?.toLowerCase());
+                hasUser2 = hasUser2 || session.allocations.some(a => a.participant.toLowerCase() === user2Addr?.toLowerCase());
+              }
+              
+              if (hasUser1 && hasUser2) {
+                currentAppSessionId = session.appSessionId;
+                const user1Alloc = session.allocations?.find(a => a.participant.toLowerCase() === user1Addr?.toLowerCase());
+                const user2Alloc = session.allocations?.find(a => a.participant.toLowerCase() === user2Addr?.toLowerCase());
+                
+                logLine(logger, `Our session found: ${session.appSessionId}`);
+                setState({
+                  status: "active",
+                  appSessionId: session.appSessionId,
+                  allocations: { 
+                    user1: user1Alloc?.amount || "1.00", 
+                    user2: user2Alloc?.amount || "0.00" 
+                  },
+                });
+                return; // Stop polling
+              }
+            }
+            
+            logLine(logger, `No matching session found yet`);
+          } else {
+            logLine(logger, `No sessions in response`);
+          }
+          
+          // Continue polling
+          setTimeout(pollForSession, 2000);
+        } catch (err) {
+          logLine(logger, `Poll error: ${err instanceof Error ? err.message : String(err)}`);
+          // Continue polling on error
+          setTimeout(pollForSession, 3000);
+        }
+      };
+      
+      // Start polling after a short delay
+      logLine(logger, `Starting session poll...`);
+      setTimeout(pollForSession, 2000);
+
+      // Also listen for any session-related messages
+      client.listen((message: RPCResponse) => {
+        const method = message.method as string;
+        
+        // Log all messages when session is active (for debugging)
+        if (state.status === "active" || state.status === "invite_ready") {
+          logLine(logger, `[Creator] Active msg: ${method} - ${JSON.stringify(message.params).slice(0, 200)}`);
+        }
+        
+        // App session update (asu) indicates state change
+        if (method === "asu") {
+          const params = message.params as { 
+            allocations?: { participant: string; asset?: string; amount: string }[] 
+          } | undefined;
+          
+          if (params?.allocations && user1Addr && user2Addr) {
+            const user1Alloc = params.allocations.find(a => a.participant.toLowerCase() === user1Addr!.toLowerCase());
+            const user2Alloc = params.allocations.find(a => a.participant.toLowerCase() === user2Addr!.toLowerCase());
+            if (user1Alloc && user2Alloc) {
+              setState({
+                allocations: { user1: user1Alloc.amount, user2: user2Alloc.amount },
+              });
+              logLine(logger, `State update: User1=${user1Alloc.amount}, User2=${user2Alloc.amount}`);
+            }
+          }
+        }
+      });
+
+      return inviteCode;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create session";
+      setState({ status: "error", error: message });
+      throw err;
+    }
+  };
+
+  // ========== JOINER FLOW ==========
+
+  // Joiner receives invite, adds signature, submits to Yellow
+  const joinWithInvite = async (inviteCode: string): Promise<void> => {
+    if (!YELLOW_WALLET_2_SEED_PHRASE) {
+      throw new Error("Missing VITE_WALLET_2_SEED_PHRASE");
+    }
+
+    setState({ status: "joining", role: "joiner" });
+
+    try {
+      const invite = decodeInvite(inviteCode);
+      
+      logLine(logger, `Decoded invite from ${invite.creatorAddress}`);
+
+      const client = await connectToYellow();
+
+      const walletClient = createWalletClient({
+        account: mnemonicToAccount(YELLOW_WALLET_2_SEED_PHRASE),
+        chain: baseSepolia,
+        transport: http(),
+      });
+
+      const joinerAddress = walletClient.account?.address as `0x${string}`;
+
+      // Verify this invite is for us
+      if (invite.joinerAddress.toLowerCase() !== joinerAddress.toLowerCase()) {
+        throw new Error(`This invite is for ${invite.joinerAddress}, but your address is ${joinerAddress}`);
+      }
+
+      logLine(logger, "Authenticating as session joiner...");
+      const sessionKey = await authenticateWallet(client, walletClient, logger);
+      messageSigner = createECDSAMessageSigner(sessionKey.privateKey);
+
+      user1Addr = invite.creatorAddress;
+      user2Addr = joinerAddress;
+      sessionNonce = invite.nonce;
+
+      logLine(logger, `Adding signature and submitting session...`);
+
+      // Add joiner's signature to the invite
+      const joinerSig = await messageSigner(invite.req);
+      invite.sig.push(joinerSig);
+
+      // Submit the fully-signed session to Yellow
+      const sessionResponse = (await client.sendMessage(
+        JSON.stringify({ req: invite.req, sig: invite.sig })
+      )) as RPCResponse;
+
+      const sessionParams = sessionResponse.params as { appSessionId?: `0x${string}` } | undefined;
+      const appSessionId = sessionParams?.appSessionId;
+
+      if (!appSessionId) {
+        const errorParams = sessionResponse.params as { error?: string } | undefined;
+        throw new Error(errorParams?.error || "Failed to create app session");
+      }
+
+      currentAppSessionId = appSessionId;
+
+      setState({
+        status: "active",
+        user1Address: invite.creatorAddress,
+        user2Address: joinerAddress,
+        appSessionId,
+        allocations: { user1: "1.00", user2: "0.00" },
+      });
+
+      logLine(logger, `Session created: ${appSessionId}`);
+      logLine(logger, `User1=${invite.creatorAddress}, User2=${joinerAddress}`);
+
+      // Listen for all messages to detect state updates
+      client.listen((message: RPCResponse) => {
+        const method = message.method as string;
+        logLine(logger, `[Joiner] Received: ${method} - ${JSON.stringify(message.params).slice(0, 200)}`);
+        
+        if (method === "asu" || method === "submit_app_state") {
+          const params = message.params as { allocations?: { participant: string; asset?: string; amount: string }[] } | undefined;
+          if (params?.allocations && user1Addr && user2Addr) {
+            const user1Alloc = params.allocations.find(a => a.participant.toLowerCase() === user1Addr!.toLowerCase());
+            const user2Alloc = params.allocations.find(a => a.participant.toLowerCase() === user2Addr!.toLowerCase());
+            if (user1Alloc && user2Alloc) {
+              setState({
+                allocations: { user1: user1Alloc.amount, user2: user2Alloc.amount },
+              });
+              logLine(logger, `State update: User1=${user1Alloc.amount}, User2=${user2Alloc.amount}`);
+            }
+          }
+        }
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to join session";
+      setState({ status: "error", error: message });
+      throw err;
+    }
+  };
+
+  // ========== SESSION OPERATIONS ==========
+
+  const transfer = async (amount: string, toUser: "user1" | "user2"): Promise<void> => {
+    if (!yellowClient || !messageSigner || !currentAppSessionId || !user1Addr || !user2Addr) {
+      throw new Error("Session not active");
+    }
+
+    const currentUser1 = parseFloat(state.allocations?.user1 || "0");
+    const currentUser2 = parseFloat(state.allocations?.user2 || "0");
+    const transferAmount = parseFloat(amount);
+
+    let newUser1: number;
+    let newUser2: number;
+
+    if (toUser === "user2") {
+      newUser1 = currentUser1 - transferAmount;
+      newUser2 = currentUser2 + transferAmount;
+    } else {
+      newUser1 = currentUser1 + transferAmount;
+      newUser2 = currentUser2 - transferAmount;
+    }
+
+    if (newUser1 < 0 || newUser2 < 0) {
+      throw new Error("Insufficient funds for transfer");
+    }
+
+    const newAllocations = [
+      { participant: user1Addr, asset: "ytest.usd", amount: newUser1.toFixed(2) },
+      { participant: user2Addr, asset: "ytest.usd", amount: newUser2.toFixed(2) },
+    ] as RPCAppSessionAllocation[];
+
+    logLine(logger, `Transferring ${amount} ytest.usd to ${toUser}...`);
+
+    const submitMessage = await createSubmitAppStateMessage(messageSigner, {
+      app_session_id: currentAppSessionId,
+      allocations: newAllocations,
+    });
+
+    await yellowClient.sendMessage(submitMessage);
+
+    setState({
+      allocations: { user1: newUser1.toFixed(2), user2: newUser2.toFixed(2) },
+    });
+
+    logLine(logger, `Transfer complete. User1=${newUser1.toFixed(2)}, User2=${newUser2.toFixed(2)}`);
+  };
+
+  const closeSession = async (): Promise<void> => {
+    if (!yellowClient || !messageSigner || !currentAppSessionId || !user1Addr || !user2Addr) {
+      throw new Error("Session not active");
+    }
+
+    logLine(logger, "Closing session...");
+
+    const finalAllocations = [
+      { participant: user1Addr, asset: "ytest.usd", amount: state.allocations?.user1 || "0" },
+      { participant: user2Addr, asset: "ytest.usd", amount: state.allocations?.user2 || "0" },
+    ] as RPCAppSessionAllocation[];
+
+    const closeMessage = await createCloseAppSessionMessage(messageSigner, {
+      app_session_id: currentAppSessionId,
+      allocations: finalAllocations,
+    });
+
+    await yellowClient.sendMessage(closeMessage);
+
+    setState({ status: "closed" });
+    logLine(logger, "Close request sent. Full closure requires both signatures.");
+  };
+
+  const disconnect = () => {
+    yellowClient = null;
+    messageSigner = null;
+    currentAppSessionId = null;
+    user1Addr = null;
+    user2Addr = null;
+    sessionNonce = 0;
+    setState({ status: "idle", invite: undefined });
+    logLine(logger, "Disconnected.");
+  };
+
+  return {
+    get state() {
+      return state;
+    },
+    createSession,
+    joinWithInvite,
+    transfer,
+    closeSession,
+    disconnect,
+  };
+};
+
+// ============================================================================
+// Legacy function for backward compatibility
+// ============================================================================
+
 export type YellowSessionResult = {
   appSessionId: `0x${string}`;
   version: number;
@@ -152,9 +651,6 @@ export const runYellowMultiPartySession = async (
     throw new Error("Missing VITE_WALLET_1_SEED_PHRASE or VITE_WALLET_2_SEED_PHRASE");
   }
 
-  // ============================================================================
-  // STEP 1: Connect to Yellow Network (Sandbox for testing)
-  // ============================================================================
   logLine(options.onLog, "Connecting to Yellow clearnet...");
   const yellow = new Client({
     url: "wss://clearnet-sandbox.yellow.com/ws",
@@ -162,9 +658,6 @@ export const runYellowMultiPartySession = async (
   await yellow.connect();
   logLine(options.onLog, "Connected to Yellow clearnet.");
 
-  // ============================================================================
-  // STEP 2: Set Up Both Participants' Wallets
-  // ============================================================================
   const walletClient = createWalletClient({
     account: mnemonicToAccount(YELLOW_WALLET_1_SEED_PHRASE),
     chain: baseSepolia,
@@ -177,9 +670,6 @@ export const runYellowMultiPartySession = async (
     transport: http(),
   });
 
-  // ============================================================================
-  // STEP 3: Authenticate Both Participants
-  // ============================================================================
   logLine(options.onLog, "Authenticating wallet 1...");
   const sessionKey = await authenticateWallet(yellow, walletClient, options.onLog);
   const messageSigner = createECDSAMessageSigner(sessionKey.privateKey);
@@ -191,9 +681,6 @@ export const runYellowMultiPartySession = async (
   const userAddress = walletClient.account?.address as `0x${string}`;
   const partnerAddress = wallet2Client.account?.address as `0x${string}`;
 
-  // ============================================================================
-  // STEP 4: Define Application Configuration
-  // ============================================================================
   const appDefinition: RPCAppDefinition = {
     protocol: RPCProtocolVersion.NitroRPC_0_4,
     participants: [userAddress, partnerAddress],
@@ -204,26 +691,25 @@ export const runYellowMultiPartySession = async (
     application: YELLOW_APPLICATION,
   };
 
-  // ============================================================================
-  // STEP 5: Set Initial Allocations
-  // ============================================================================
   const allocations = [
     { participant: userAddress, asset: "ytest.usd", amount: "0.01" },
     { participant: partnerAddress, asset: "ytest.usd", amount: "0.00" },
   ] as RPCAppSessionAllocation[];
 
-  // ============================================================================
-  // STEP 6: Create and Submit App Session
-  // ============================================================================
   logLine(options.onLog, "Creating app session...");
   const sessionMessage = await createAppSessionMessage(messageSigner, {
     definition: appDefinition,
     allocations,
   });
 
-  logLine(options.onLog, `Session message created: ${sessionMessage}`);
+  // Add second signature
+  const parsed = JSON.parse(sessionMessage) as { req: RPCData; sig: string[] };
+  const sig2 = await messageSigner2(parsed.req);
+  parsed.sig.push(sig2);
 
-  const sessionResponse = (await yellow.sendMessage(sessionMessage)) as RPCResponse;
+  logLine(options.onLog, `Session message created with both signatures`);
+
+  const sessionResponse = (await yellow.sendMessage(JSON.stringify(parsed))) as RPCResponse;
   logLine(options.onLog, "Session message sent.");
   logLine(options.onLog, `Session response: ${JSON.stringify(sessionResponse)}`);
 
@@ -235,9 +721,6 @@ export const runYellowMultiPartySession = async (
 
   logLine(options.onLog, `App session created: ${appSessionId}`);
 
-  // ============================================================================
-  // STEP 7: Update Session State (Transfer Between Participants)
-  // ============================================================================
   const finalAllocations = [
     { participant: userAddress, asset: "ytest.usd", amount: "0.00" },
     { participant: partnerAddress, asset: "ytest.usd", amount: "0.01" },
@@ -249,12 +732,9 @@ export const runYellowMultiPartySession = async (
     allocations: finalAllocations,
   });
 
-  const submitAppStateMessageJson = JSON.parse(submitAppStateMessage);
-  logLine(options.onLog, `Submit app state message: ${JSON.stringify(submitAppStateMessageJson)}`);
+  await yellow.sendMessage(submitAppStateMessage);
+  logLine(options.onLog, "App state updated.");
 
-  // ============================================================================
-  // STEP 8: Close Session with Multi-Party Signatures
-  // ============================================================================
   logLine(options.onLog, "Preparing close session message...");
   const closeSessionMessage = await createCloseAppSessionMessage(messageSigner, {
     app_session_id: appSessionId,
@@ -266,34 +746,19 @@ export const runYellowMultiPartySession = async (
     sig: string[];
   };
 
-  // ============================================================================
-  // STEP 9: Collect Second Participant's Signature
-  // ============================================================================
   const signedCloseSessionMessageSignature2 = await messageSigner2(
     closeSessionMessageJson.req
   );
 
-  logLine(options.onLog, `Wallet 2 signed close session message: ${signedCloseSessionMessageSignature2}`);
-
   closeSessionMessageJson.sig.push(signedCloseSessionMessageSignature2);
 
-  logLine(options.onLog, `Close session message (with all signatures): ${JSON.stringify(closeSessionMessageJson)}`);
-
-  // ============================================================================
-  // STEP 10: Submit Close Request
-  // ============================================================================
   logLine(options.onLog, "Sending close session message...");
   const closeSessionResponse = await yellow.sendMessage(
     JSON.stringify(closeSessionMessageJson)
   );
-  logLine(options.onLog, "Close session message sent.");
   logLine(options.onLog, `Close session response: ${JSON.stringify(closeSessionResponse)}`);
 
   logLine(options.onLog, "Session closed.");
-
-  yellow.listen((message: RPCResponse) => {
-    logLine(options.onLog, `Yellow message: ${JSON.stringify(message)}`);
-  });
 
   return { appSessionId, version: 1 };
 };
