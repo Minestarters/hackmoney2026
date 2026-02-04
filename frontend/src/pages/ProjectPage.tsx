@@ -7,7 +7,6 @@ import BridgeKitModal from "../components/BridgeKitModal";
 import {
   EXPLORER_URL,
   STAGE_LABELS,
-  USDC_ADDRESS,
   getExplorerUrl,
 } from "../config";
 import { useWallet } from "../context/WalletContext";
@@ -204,7 +203,7 @@ const ProjectPage = () => {
     try {
       const [info, supporters] = await Promise.all([
         fetchProjectInfo(address, provider),
-        fetchSupporterCount(address, provider),
+        fetchSupporterCount(address),
       ]);
 
       setProject(info);
@@ -709,7 +708,7 @@ const ProjectPage = () => {
                 <div className="flex justify-between">
                   <span className="text-stone-300">Share balance</span>
                   <span className="text-sky-100">
-                    {formatUsdc(position.shareBalance)}
+                    {formatUsdc(position.shares)}
                   </span>
                 </div>
               </div>

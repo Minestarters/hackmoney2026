@@ -21,45 +21,10 @@
  * @param initialAmount - Initial amount value (default: "0")
  * @param onContinue - Callback with amount and chain when continue is clicked (bypasses all other logic)
  * @param onContractMethod - Custom contract method to execute instead of default deposit logic
- *
- * Examples:
- *
- * 1. Default Deposit (backward compatible):
- * <BridgeKitModal
- *   isOpen={isOpen}
- *   onClose={onClose}
- *   project={project}
- *   onComplete={handleComplete}
- * />
- *
- * 2. Withdraw (contract method first, then bridge):
- * <BridgeKitModal
- *   isOpen={isOpen}
- *   onClose={onClose}
- *   ctaLabel="Withdraw"
- *   bridgeMode="after"
- *   showAmount={true}
- *   initialAmount="100"
- *   onContractMethod={async (amount) => {
- *     await vault.withdraw(parseUnits(amount, 6));
- *   }}
- * />
- *
- * 3. Custom callback (parent handles everything):
- * <BridgeKitModal
- *   isOpen={isOpen}
- *   onClose={onClose}
- *   ctaLabel="Transfer"
- *   showAmount={false}
- *   onContinue={async (amount, chain) => {
- *     console.log('Selected chain:', chain);
- *     // Handle custom logic
- *   }}
- * />
  */
 
 import { useState, useEffect } from "react";
-import { ethers, parseUnits } from "ethers";
+import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import {
   Blockchain,
@@ -73,8 +38,6 @@ import {
 } from "../lib/bridgeChains";
 import { USDC_ADDRESS, ARC_TESTNET_CHAIN_ID } from "../config";
 import { useWallet } from "../context/WalletContext";
-import { getVault, getUsdc } from "../lib/contracts";
-import { formatUsdc } from "../lib/format";
 import type { ProjectInfo } from "../types";
 
 export type BridgeMode = "before" | "after";

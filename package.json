@@ -8,7 +8,8 @@
   "workspaces": [
     "contracts",
     "frontend",
-    "subgraph"
+    "subgraph",
+    "scripts"
   ],
   "scripts": {
     "contracts:compile": "yarn workspace @hackmoney2026/contracts compile",

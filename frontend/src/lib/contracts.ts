@@ -1,6 +1,6 @@
 import { Contract } from "ethers";
 import type { BrowserProvider, JsonRpcProvider, Signer } from "ethers";
-import { FACTORY_ADDRESS, START_BLOCK, USDC_ADDRESS } from "../config";
+import { FACTORY_ADDRESS, USDC_ADDRESS } from "../config";
 import {
   basketVaultAbi,
   erc20Abi,
@@ -98,29 +98,15 @@ export const fetchProjectInfo = async (
   };
 };
 
-const normalizeAddress = (address: string) => address.trim().toLowerCase();
-
 export const fetchSupporterCount = async (
   projectAddress: string,
-  provider: BrowserProvider | JsonRpcProvider
 ): Promise<number> => {
   try {
     return await getProjectSupporterCount(projectAddress);
   } catch (e) {
     console.error("Subgraph failed, falling back to RPC", e);
-    // Fallback to RPC if subgraph fails? Or just return 0?
-    // Using simple RPC fallback logic is complex here due to code structure, 
-    // let's stick to subgraph or simple failure.
     return 0;
   }
-};
-
-export const fetchTotalClaimed = async (
-  projectAddress: string,
-  provider: BrowserProvider | JsonRpcProvider
-): Promise<bigint> => {
-  // Profit claiming is now off-chain/cross-chain and not tracked by vault events
-  return 0n;
 };
 
 export const fetchUserPosition = async (
@@ -137,7 +123,6 @@ export const fetchUserPosition = async (
   return {
     shares: shareBalance,
     usdcBalance,
-    shareBalance,
   };
 };
 

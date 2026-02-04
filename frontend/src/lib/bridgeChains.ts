@@ -1,4 +1,3 @@
-import { Blockchain } from "@circle-fin/bridge-kit";
 import {
   ArbitrumSepolia,
   ArcTestnet,

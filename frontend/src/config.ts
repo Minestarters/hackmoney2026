@@ -1,14 +1,13 @@
-export const FACTORY_ADDRESS = import.meta.env.VITE_FACTORY_ADDRESS || "";
-export const USDC_ADDRESS = import.meta.env.VITE_USDC_ADDRESS || "";
-export const RPC_URL = import.meta.env.VITE_RPC_URL || "http://localhost:8545";
+export const FACTORY_ADDRESS = "0x523faDa2A3ee98D8069928c3CB5aB94bb65e91A8";
+export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
+export const RPC_URL = "https://rpc.testnet.arc.network";
 export const EXPLORER_URL = import.meta.env.VITE_EXPLORER_URL || "";
 export const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1740165/minestarters-hackmoney/version/latest";
-export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
 
 const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",
   11155111: "https://sepolia.etherscan.io",
-  5042002: "https://explorer.arctest.net", // Arc Testnet
+  5042002: "https://testnet.arcscan.app", // Arc Testnet
 };
 
 export const FALLBACK_CHAIN_ID = 5042002;
