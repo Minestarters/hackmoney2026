@@ -15,8 +15,9 @@ contract MinestartersFactory {
     constructor(address usdcToken) {
         require(usdcToken != address(0), "USDC required");
         usdc = usdcToken;
-        navEngine = new NAVEngine(address(0), msg.sender);
+        navEngine = new NAVEngine(address(0), address(this));
         navEngine.setFactory(address(this));
+        navEngine.transferOwnership(msg.sender);
     }
 
     function createProject(
@@ -106,7 +107,7 @@ contract MinestartersFactory {
         for (uint256 i = 0; i < len; i++) {
             uint256 floorNav = (minimumRaise * companyWeights[i]) / 100;
             navEngine.registerCompany(
-                address(vault), companyNames[i], companyWeights[i], 10, 8500, 5, 15, 1000, floorNav
+                address(vault), companyNames[i], companyWeights[i], 10_000, 8500, 5, 15, 1000, floorNav
             );
         }
 
