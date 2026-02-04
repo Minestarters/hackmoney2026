@@ -89,8 +89,7 @@ contract MinestartersFactory {
             withdrawAddress,
             minimumRaise,
             deadline,
-            raiseFeeBps,
-            profitFeeBps
+            raiseFeeBps
         );
 
         projects.push(address(vault));
