@@ -77,8 +77,8 @@ contract NAVEngine is Ownable {
         Vault memory v = vaults[vault];
         if (!v.registered) revert ProjectNotRegistered();
         uint256 totalSupply = IERC20(BasketVault(vault).shareToken()).totalSupply();
-        if(totalSupply == 0) return 0;
-        
+        if (totalSupply == 0) return 0;
+
         navPerToken = _calculateBasketNAV(vault, v.companyCount) / totalSupply;
     }
 
@@ -244,7 +244,6 @@ contract NAVEngine is Ownable {
         c.inventoryTonnes = tonnes;
         emit CompanyUpdated(vault, companyIndex);
     }
-
 
     function updateGoldPrice(uint256 newPrice) external {
         // if (msg.sender != oracle && msg.sender != owner()) revert Unauthorized();

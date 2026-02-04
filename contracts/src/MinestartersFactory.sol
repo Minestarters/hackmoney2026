@@ -106,15 +106,7 @@ contract MinestartersFactory {
         for (uint256 i = 0; i < len; i++) {
             uint256 floorNav = (minimumRaise * companyWeights[i]) / 100;
             navEngine.registerCompany(
-                address(vault),
-                companyNames[i],
-                companyWeights[i],
-                10,
-                8500,
-                5,
-                15,
-                1000,
-                floorNav
+                address(vault), companyNames[i], companyWeights[i], 10, 8500, 5, 15, 1000, floorNav
             );
         }
 
