@@ -4,6 +4,7 @@ import HomePage from "./pages/HomePage";
 import CreateProjectPage from "./pages/CreateProjectPage";
 import ProjectPage from "./pages/ProjectPage";
 import CalculatorPage from "./pages/CalculatorPage";
+import { CompanyDetailsPage } from "./pages/CompanyDetailsPage";
 
 const App = () => (
   <Layout>
@@ -11,6 +12,10 @@ const App = () => (
       <Route path="/" element={<HomePage />} />
       <Route path="/create" element={<CreateProjectPage />} />
       <Route path="/project/:address" element={<ProjectPage />} />
+      <Route
+        path="/company/:address/:companyIndex"
+        element={<CompanyDetailsPage />}
+      />
       <Route path="/calculator" element={<CalculatorPage />} />
     </Routes>
   </Layout>

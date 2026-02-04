@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
@@ -166,8 +166,45 @@ const IconClaim = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+const CompanyBreakdownItem = ({
+  name,
+  weight,
+  colorIndex,
+  vaultAddress,
+  companyIndex,
+}: {
+  name: string;
+  weight: number;
+  colorIndex: number;
+  vaultAddress: string;
+  companyIndex: number;
+}) => {
+  return (
+    <Link
+      to={`/company/${vaultAddress}/${companyIndex}`}
+      className="block w-full rounded bg-stone-800/60 px-3 py-2 transition-all hover:bg-stone-700/80 hover:shadow-lg"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-block h-2 w-2 rounded-sm"
+            style={{
+              backgroundColor: PIE_COLORS[colorIndex % PIE_COLORS.length],
+            }}
+          />
+          <p className="text-left text-sky-200 hover:text-sky-100 transition-colors underline decoration-sky-200/40 underline-offset-2">
+            {name}
+          </p>
+        </div>
+        <p className="text-stone-400">{weight}%</p>
+      </div>
+    </Link>
+  );
+};
+
 const ProjectPage = () => {
   const { address } = useParams<{ address: string }>();
+  const navigate = useNavigate();
   const { provider, signer, account, connect } = useWallet();
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [position, setPosition] = useState<UserPosition | null>(null);
@@ -706,23 +743,14 @@ const ProjectPage = () => {
 
               <div className="flex-1 space-y-2 text-[11px]">
                 {project.companyNames.map((name, idx) => (
-                  <div
+                  <CompanyBreakdownItem
                     key={name + idx}
-                    className="flex items-center justify-between rounded bg-stone-800/60 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="inline-block h-2 w-2 rounded-sm"
-                        style={{
-                          backgroundColor: PIE_COLORS[idx % PIE_COLORS.length],
-                        }}
-                      />
-                      <p className="text-stone-100">{name}</p>
-                    </div>
-                    <p className="text-stone-400">
-                      {project.companyWeights[idx]}%
-                    </p>
-                  </div>
+                    name={name}
+                    weight={project.companyWeights[idx]}
+                    colorIndex={idx}
+                    vaultAddress={project.address}
+                    companyIndex={idx}
+                  />
                 ))}
               </div>
             </div>
