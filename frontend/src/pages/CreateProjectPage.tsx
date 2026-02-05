@@ -91,6 +91,9 @@ const CreateProjectPage = () => {
   const [newCompanyStake, setNewCompanyStake] = useState("10");
   const [topUpAmounts, setTopUpAmounts] = useState<Record<string, string>>({});
 
+  // Finalization state
+  const [deploymentTriggered, setDeploymentTriggered] = useState(false);
+
   // Local form fields state (for typing without network lag)
   const defaultFormFields: ProjectFormFields = {
     projectName: "",
@@ -110,6 +113,29 @@ const CreateProjectPage = () => {
     () => createYellowSessionManager(setSessionState, appendLog),
     [appendLog]
   );
+
+  // Finalization derived state
+  const finalizationRequest = sessionState.basket?.finalizationRequest;
+  const isEditingLocked = !!finalizationRequest;
+  
+  const currentUserAddress = useMemo(() => {
+    if (sessionState.role === "creator") {
+      return sessionState.user1Address?.toLowerCase();
+    }
+    return sessionState.user2Address?.toLowerCase();
+  }, [sessionState.role, sessionState.user1Address, sessionState.user2Address]);
+
+  const hasVoted = useMemo(() => {
+    if (!finalizationRequest || !currentUserAddress) return false;
+    return currentUserAddress in finalizationRequest.votes;
+  }, [finalizationRequest, currentUserAddress]);
+
+  const quorumReached = useMemo(() => {
+    if (!finalizationRequest || !sessionState.user1Address || !sessionState.user2Address) return false;
+    const user1Key = sessionState.user1Address.toLowerCase();
+    const user2Key = sessionState.user2Address.toLowerCase();
+    return finalizationRequest.votes[user1Key] === true && finalizationRequest.votes[user2Key] === true;
+  }, [finalizationRequest, sessionState.user1Address, sessionState.user2Address]);
 
   // Sync local form fields from session state when it changes (incoming updates)
   useEffect(() => {
@@ -280,6 +306,117 @@ const CreateProjectPage = () => {
   const getCompanyTotalStake = (companyName: string): number => {
     const stakes = sessionState.basket?.stakes[companyName] || {};
     return Object.values(stakes).reduce((sum, amt) => sum + parseFloat(amt || "0"), 0);
+  };
+
+  // Finalization handlers
+  const handleProposeFinalization = async () => {
+    setYellowError(null);
+    try {
+      await sessionManager.proposeFinalization();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to propose finalization";
+      setYellowError(msg);
+    }
+  };
+
+  const handleVoteFinalization = async (accept: boolean) => {
+    setYellowError(null);
+    try {
+      const { quorumReached } = await sessionManager.voteOnFinalization(accept);
+      if (quorumReached && !deploymentTriggered) {
+        // Last voter triggers deployment
+        setDeploymentTriggered(true);
+        await triggerDeployment();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to vote on finalization";
+      setYellowError(msg);
+      setDeploymentTriggered(false);
+    }
+  };
+
+  // Extract deployment logic for reuse
+  const triggerDeployment = async () => {
+    if (!sessionState.basket) {
+      setMessage("No basket data");
+      setDeploymentTriggered(false);
+      return;
+    }
+
+    const companiesForSubmit = calculateWeightsFromBasket(sessionState.basket);
+
+    if (companiesForSubmit.length === 0) {
+      setMessage("Add at least one company");
+      setDeploymentTriggered(false);
+      return;
+    }
+
+    const totalWeight = companiesForSubmit.reduce((sum, c) => sum + c.weight, 0);
+    if (totalWeight !== 100) {
+      setMessage(`Weights must sum to 100% (currently ${totalWeight}%)`);
+      setDeploymentTriggered(false);
+      return;
+    }
+
+    if (!localFormFields.projectName) {
+      setMessage("Enter a project name");
+      setDeploymentTriggered(false);
+      return;
+    }
+
+    if (!isConnected) {
+      mutate({ connector: injected() });
+      setDeploymentTriggered(false);
+      return;
+    }
+
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      setMessage("Could not get wallet");
+      setDeploymentTriggered(false);
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const minRaise = parseUnits(localFormFields.minimumRaise || "0", 6);
+      const deadlineTs = dateInputValueToUnixSeconds(localFormFields.deadline);
+      if (!Number.isFinite(deadlineTs)) {
+        setMessage("Select a valid deadline");
+        setSubmitting(false);
+        setDeploymentTriggered(false);
+        return;
+      }
+      const raiseFeeBps = Math.round((parseFloat(localFormFields.raiseFeePct || "0") || 0) * 100);
+      const profitFeeBps = Math.round((parseFloat(localFormFields.profitFeePct || "0") || 0) * 100);
+
+      if (raiseFeeBps > 10_000 || profitFeeBps > 10_000) {
+        setMessage("Fees cannot exceed 100%");
+        setSubmitting(false);
+        setDeploymentTriggered(false);
+        return;
+      }
+
+      const hash = await writeFactory.createProject(walletClient, {
+        projectName: localFormFields.projectName,
+        companyNames: companiesForSubmit.map((c) => c.name),
+        companyWeights: companiesForSubmit.map((c) => BigInt(c.weight)),
+        minimumRaise: minRaise,
+        deadline: BigInt(deadlineTs),
+        withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
+        raiseFeeBps: BigInt(raiseFeeBps),
+        profitFeeBps: BigInt(profitFeeBps),
+      });
+
+      await publicClient.waitForTransactionReceipt({ hash });
+      setMessage("Project created! Refresh home to see it.");
+    } catch (err) {
+      console.error(err);
+      setMessage("Transaction failed");
+      setDeploymentTriggered(false);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const getUserStake = (companyName: string, userAddr: string): string => {
@@ -602,17 +739,104 @@ const CreateProjectPage = () => {
       {/* Project Creation Form - Shown when session is active or invite ready */}
       {canEditForm && sessionState.basket && (
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          {isActive ? (
+          {/* Finalization Voting Card */}
+          {finalizationRequest && isActive && (
+            <div className="rounded border-2 border-amber-600 bg-amber-900/20 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="font-medium text-amber-300">Finalization Vote in Progress</p>
+                {quorumReached && (
+                  <span className="rounded bg-green-800 px-2 py-0.5 text-[10px] text-green-200">
+                    100% Quorum Reached
+                  </span>
+                )}
+              </div>
+              
+              <div className="mb-3 text-[10px] text-stone-400">
+                <p>Proposed by: <span className="font-mono text-amber-200">{shortAddress(finalizationRequest.proposer)}</span></p>
+                <p>Time: {new Date(finalizationRequest.timestamp).toLocaleTimeString()}</p>
+              </div>
+
+              {/* Vote Status */}
+              <div className="mb-3 grid grid-cols-2 gap-2 text-[10px]">
+                <div className="rounded bg-black/20 p-2">
+                  <p className="text-stone-500">Host</p>
+                  <p className="font-mono text-sky-300">{shortAddress(sessionState.user1Address || "")}</p>
+                  <p className={`mt-1 font-medium ${
+                    finalizationRequest.votes[sessionState.user1Address?.toLowerCase() || ""] === true
+                      ? "text-green-400"
+                      : "text-stone-500"
+                  }`}>
+                    {finalizationRequest.votes[sessionState.user1Address?.toLowerCase() || ""] === true
+                      ? "✓ Accepted"
+                      : "○ Pending"}
+                  </p>
+                </div>
+                <div className="rounded bg-black/20 p-2">
+                  <p className="text-stone-500">Joiner</p>
+                  <p className="font-mono text-amber-300">{shortAddress(sessionState.user2Address || "")}</p>
+                  <p className={`mt-1 font-medium ${
+                    finalizationRequest.votes[sessionState.user2Address?.toLowerCase() || ""] === true
+                      ? "text-green-400"
+                      : "text-stone-500"
+                  }`}>
+                    {finalizationRequest.votes[sessionState.user2Address?.toLowerCase() || ""] === true
+                      ? "✓ Accepted"
+                      : "○ Pending"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              {!hasVoted && !quorumReached && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleVoteFinalization(true)}
+                    className="flex-1 rounded bg-green-700 px-4 py-2 text-green-100 hover:bg-green-600"
+                    disabled={submitting}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleVoteFinalization(false)}
+                    className="flex-1 rounded bg-red-800 px-4 py-2 text-red-200 hover:bg-red-700"
+                    disabled={submitting}
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+
+              {/* Status Messages */}
+              {hasVoted && !quorumReached && (
+                <p className="text-center text-[10px] text-amber-300">
+                  Waiting for other participant to vote...
+                </p>
+              )}
+              {quorumReached && (submitting || deploymentTriggered) && (
+                <p className="text-center text-[10px] text-green-300">
+                  Deploying to blockchain...
+                </p>
+              )}
+
+              <p className="mt-2 text-[10px] text-stone-500">
+                Editing is locked during voting. Reject to make changes.
+              </p>
+            </div>
+          )}
+
+          {isActive && !finalizationRequest ? (
             <p className="text-[10px] text-green-400">
               All fields below are collaboratively editable. Changes sync in real-time.
             </p>
-          ) : (
+          ) : !isActive ? (
             <p className="text-[10px] text-yellow-400">
               Start filling out the form. Changes will sync once the other user joins.
             </p>
-          )}
+          ) : null}
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className={`grid gap-4 md:grid-cols-2 ${isEditingLocked ? "opacity-60" : ""}`}>
             <label className="space-y-2">
               <span className="text-stone-300">Project name</span>
               <input
@@ -622,6 +846,7 @@ const CreateProjectPage = () => {
                 onBlur={() => handleFieldBlur("projectName")}
                 placeholder="Enter project name"
                 required
+                disabled={isEditingLocked}
               />
             </label>
             <label className="space-y-2">
@@ -633,6 +858,7 @@ const CreateProjectPage = () => {
                 onBlur={() => handleFieldBlur("withdrawAddress")}
                 placeholder="0x..."
                 required
+                disabled={isEditingLocked}
               />
             </label>
             <label className="space-y-2">
@@ -644,6 +870,7 @@ const CreateProjectPage = () => {
                 onBlur={() => handleFieldBlur("minimumRaise")}
                 type="number"
                 min="0"
+                disabled={isEditingLocked}
               />
             </label>
             <label className="space-y-2">
@@ -656,6 +883,7 @@ const CreateProjectPage = () => {
                 onBlur={() => handleFieldBlur("deadline")}
                 min={toDateInputValue(new Date())}
                 required
+                disabled={isEditingLocked}
               />
             </label>
             <label className="space-y-2">
@@ -669,6 +897,7 @@ const CreateProjectPage = () => {
                 onBlur={() => handleFieldBlur("raiseFeePct")}
                 min="0"
                 max="100"
+                disabled={isEditingLocked}
               />
             </label>
             <label className="space-y-2">
@@ -682,6 +911,7 @@ const CreateProjectPage = () => {
                 onBlur={() => handleFieldBlur("profitFeePct")}
                 min="0"
                 max="100"
+                disabled={isEditingLocked}
               />
             </label>
           </div>
@@ -690,10 +920,10 @@ const CreateProjectPage = () => {
             <p className="mb-3 text-stone-300">Companies & weights</p>
 
             <div className="space-y-3">
-              {/* Add new company - only enabled when session is active */}
-              <div className={`rounded border-2 p-3 ${isActive ? "border-green-800/50 bg-green-900/10" : "border-stone-700/50 bg-stone-900/10"}`}>
-                <p className={`mb-2 text-[10px] ${isActive ? "text-green-300" : "text-stone-400"}`}>
-                  Add a company {!isActive && "(waiting for other user)"}
+              {/* Add new company - only enabled when session is active and not locked */}
+              <div className={`rounded border-2 p-3 ${isActive && !isEditingLocked ? "border-green-800/50 bg-green-900/10" : "border-stone-700/50 bg-stone-900/10"} ${isEditingLocked ? "opacity-60" : ""}`}>
+                <p className={`mb-2 text-[10px] ${isActive && !isEditingLocked ? "text-green-300" : "text-stone-400"}`}>
+                  Add a company {!isActive && "(waiting for other user)"}{isEditingLocked && "(locked during voting)"}
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -701,7 +931,7 @@ const CreateProjectPage = () => {
                     value={newCompanyName}
                     onChange={(e) => setNewCompanyName(e.target.value)}
                     placeholder="Company name"
-                    disabled={!isActive}
+                    disabled={!isActive || isEditingLocked}
                   />
                   <input
                     className="input-blocky w-24 rounded px-3 py-2 text-center"
@@ -711,19 +941,19 @@ const CreateProjectPage = () => {
                     placeholder="Stake"
                     min="0.01"
                     step="0.01"
-                    disabled={!isActive}
+                    disabled={!isActive || isEditingLocked}
                   />
                   <button
                     type="button"
                     onClick={handleAddCompany}
                     className="button-blocky rounded px-4 py-2"
-                    disabled={!isActive}
+                    disabled={!isActive || isEditingLocked}
                   >
                     Add
                   </button>
                 </div>
                 <p className="mt-1 text-[10px] text-stone-500">
-                  {isActive ? "Initial stake in USDC. Others can see and top up." : "Share the invite code so the other user can join."}
+                  {isEditingLocked ? "Editing locked during finalization vote." : isActive ? "Initial stake in USDC. Others can see and top up." : "Share the invite code so the other user can join."}
                 </p>
               </div>
 
@@ -759,7 +989,7 @@ const CreateProjectPage = () => {
                             <p className="text-green-300">${totalStake.toFixed(2)}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className={`flex items-center gap-2 ${isEditingLocked ? "opacity-60" : ""}`}>
                           <input
                             className="input-blocky w-20 rounded px-2 py-1 text-center text-[10px]"
                             type="number"
@@ -773,11 +1003,13 @@ const CreateProjectPage = () => {
                             placeholder="Amount"
                             min="0.01"
                             step="0.01"
+                            disabled={isEditingLocked}
                           />
                           <button
                             type="button"
                             onClick={() => handleTopUp(companyName)}
-                            className="rounded border border-green-700 px-2 py-1 text-[10px] text-green-300 hover:bg-green-900/30"
+                            className="rounded border border-green-700 px-2 py-1 text-[10px] text-green-300 hover:bg-green-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={isEditingLocked}
                           >
                             + Top Up
                           </button>
@@ -810,13 +1042,47 @@ const CreateProjectPage = () => {
 
           {message && <p className="text-[10px] text-sky-200">{message}</p>}
 
-          <button
-            type="submit"
-            className="button-blocky rounded px-4 py-3 text-xs uppercase"
-            disabled={submitting}
-          >
-            {submitting ? "Deploying..." : "Create project"}
-          </button>
+          {/* Propose Finalization Button - only when session active, no finalization in progress, and form is valid */}
+          {isActive && !finalizationRequest && sessionState.basket && sessionState.basket.companies.length > 0 && (
+            <div className="rounded border-2 border-green-800/50 bg-green-900/10 p-4">
+              <p className="mb-2 text-[10px] text-stone-400">
+                Ready to finalize? Both participants must agree before deploying.
+              </p>
+              <button
+                type="button"
+                onClick={handleProposeFinalization}
+                className="w-full rounded bg-green-700 px-4 py-3 text-sm font-medium text-green-100 hover:bg-green-600"
+                disabled={
+                  submitting ||
+                  !localFormFields.projectName ||
+                  calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0) !== 100
+                }
+              >
+                Propose Finalization (Requires 100% Vote)
+              </button>
+              {calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0) !== 100 && (
+                <p className="mt-1 text-[10px] text-amber-400">
+                  Weights must sum to 100% before proposing
+                </p>
+              )}
+              {!localFormFields.projectName && (
+                <p className="mt-1 text-[10px] text-amber-400">
+                  Enter a project name before proposing
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Solo submit button - only shown when NOT in active session or before joiner connects */}
+          {!isActive && (
+            <button
+              type="submit"
+              className="button-blocky rounded px-4 py-3 text-xs uppercase"
+              disabled={submitting}
+            >
+              {submitting ? "Deploying..." : "Create project"}
+            </button>
+          )}
         </form>
       )}
 

@@ -61,11 +61,19 @@ export type ProjectFormFields = {
   withdrawAddress: string;
 };
 
+// Finalization request for 100% quorum voting
+export type FinalizationRequest = {
+  proposer: `0x${string}`;
+  timestamp: number;
+  votes: Record<string, boolean>; // lowercase address -> vote (true = accept, false = reject)
+};
+
 // Collaborative basket state - synced via session_data
 export type BasketState = {
   companies: string[]; // List of company names
   stakes: Record<string, Record<string, string>>; // company -> { userAddr -> amount }
   formFields?: ProjectFormFields; // Collaborative form fields
+  finalizationRequest?: FinalizationRequest; // Finalization voting state
 };
 
 export type YellowSessionState = {
@@ -95,6 +103,9 @@ export type YellowSessionManager = {
   stakeInCompany: (companyName: string, amount: string) => Promise<void>;
   // Collaborative form field operations
   updateFormField: (field: keyof ProjectFormFields, value: string) => Promise<void>;
+  // Finalization operations (100% quorum voting)
+  proposeFinalization: () => Promise<void>;
+  voteOnFinalization: (accept: boolean) => Promise<{ quorumReached: boolean }>;
 };
 
 // ============================================================================
@@ -894,6 +905,92 @@ export const createYellowSessionManager = (
     await submitBasketUpdate(newBasket);
   };
 
+  // ========== FINALIZATION OPERATIONS ==========
+
+  const proposeFinalization = async (): Promise<void> => {
+    if (!yellowClient || !messageSigner || !currentAppSessionId) {
+      throw new Error("Session not active");
+    }
+
+    const currentBasket = state.basket || { companies: [], stakes: {} };
+
+    // Check if finalization is already in progress
+    if (currentBasket.finalizationRequest) {
+      throw new Error("Finalization already in progress");
+    }
+
+    const proposerAddress = getCurrentUserAddress();
+    const proposerKey = proposerAddress.toLowerCase();
+
+    // Create finalization request with proposer auto-voting yes
+    const finalizationRequest: FinalizationRequest = {
+      proposer: proposerAddress,
+      timestamp: Date.now(),
+      votes: {
+        [proposerKey]: true, // Proposer automatically votes yes
+      },
+    };
+
+    const newBasket: BasketState = {
+      ...currentBasket,
+      finalizationRequest,
+    };
+
+    logLine(logger, `Proposing finalization (auto-voting yes)`);
+    await submitBasketUpdate(newBasket);
+  };
+
+  const voteOnFinalization = async (accept: boolean): Promise<{ quorumReached: boolean }> => {
+    if (!yellowClient || !messageSigner || !currentAppSessionId || !user1Addr || !user2Addr) {
+      throw new Error("Session not active");
+    }
+
+    const currentBasket = state.basket || { companies: [], stakes: {} };
+
+    if (!currentBasket.finalizationRequest) {
+      throw new Error("No finalization in progress");
+    }
+
+    const voterAddress = getCurrentUserAddress();
+    const voterKey = voterAddress.toLowerCase();
+
+    // If rejecting, clear the finalization request
+    if (!accept) {
+      const newBasket: BasketState = {
+        ...currentBasket,
+        finalizationRequest: undefined,
+      };
+
+      logLine(logger, `Rejecting finalization - clearing request`);
+      await submitBasketUpdate(newBasket);
+      return { quorumReached: false };
+    }
+
+    // Record the yes vote
+    const newVotes = {
+      ...currentBasket.finalizationRequest.votes,
+      [voterKey]: true,
+    };
+
+    // Check if 100% quorum is reached (both users voted yes)
+    const user1Key = user1Addr.toLowerCase();
+    const user2Key = user2Addr.toLowerCase();
+    const quorumReached = newVotes[user1Key] === true && newVotes[user2Key] === true;
+
+    const newBasket: BasketState = {
+      ...currentBasket,
+      finalizationRequest: {
+        ...currentBasket.finalizationRequest,
+        votes: newVotes,
+      },
+    };
+
+    logLine(logger, `Voting yes on finalization (quorum reached: ${quorumReached})`);
+    await submitBasketUpdate(newBasket);
+
+    return { quorumReached };
+  };
+
   return {
     get state() {
       return state;
@@ -906,6 +1003,8 @@ export const createYellowSessionManager = (
     addCompany,
     stakeInCompany,
     updateFormField,
+    proposeFinalization,
+    voteOnFinalization,
   };
 };
 
