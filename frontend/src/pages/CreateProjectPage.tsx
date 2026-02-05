@@ -83,6 +83,7 @@ const CreateProjectPage = () => {
   const [yellowError, setYellowError] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<YellowSessionState>({ status: "idle" });
   const [inviteCode, setInviteCode] = useState("");
+  const [joinerAddressInput, setJoinerAddressInput] = useState(""); // Address of the user to invite
   const [legacyRunning, setLegacyRunning] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -159,10 +160,15 @@ const CreateProjectPage = () => {
 
   // Yellow Session Handlers - Creator Flow
   const handleCreateSession = async () => {
+    const trimmedJoiner = joinerAddressInput.trim();
+    if (!trimmedJoiner || !trimmedJoiner.startsWith("0x") || trimmedJoiner.length !== 42) {
+      setYellowError("Please enter a valid Ethereum address for the collaborator");
+      return;
+    }
     setYellowError(null);
     setYellowLogs([]);
     try {
-      await sessionManager.createSession();
+      await sessionManager.createSession(trimmedJoiner as `0x${string}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to create session";
       setYellowError(msg);
@@ -420,16 +426,25 @@ const CreateProjectPage = () => {
               <div className="rounded border-2 border-sky-800/50 bg-sky-900/10 p-3">
                 <p className="mb-2 font-medium text-sky-300">Host (User 1)</p>
                 <p className="mb-3 text-[10px] text-stone-400">
-                  Create a session and get an invite code to share.
+                  Enter your collaborator's wallet address, then create a session.
                 </p>
-                <button
-                  type="button"
-                  onClick={handleCreateSession}
-                  className="button-blocky w-full rounded px-3 py-2"
-                  disabled={isConnecting}
-                >
-                  Create Session
-                </button>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={joinerAddressInput}
+                    onChange={(e) => setJoinerAddressInput(e.target.value)}
+                    placeholder="Collaborator's wallet address (0x...)"
+                    className="input-blocky w-full rounded px-3 py-2 font-mono text-[10px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCreateSession}
+                    className="button-blocky w-full rounded px-3 py-2"
+                    disabled={isConnecting || !joinerAddressInput.trim()}
+                  >
+                    Create Session
+                  </button>
+                </div>
               </div>
 
               {/* Joiner Flow */}

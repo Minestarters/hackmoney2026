@@ -81,9 +81,9 @@ export type YellowSessionState = {
 
 export type YellowSessionManager = {
   state: YellowSessionState;
-  // Creator flow - creates invite automatically using predefined User 2 address
-  createSession: () => Promise<string>;
-  // Joiner flow  
+  // Creator flow - creates invite for a specific joiner address
+  createSession: (joinerAddress: `0x${string}`) => Promise<string>;
+  // Joiner flow - uses connected wallet
   joinWithInvite: (inviteCode: string) => Promise<void>;
   // Session operations
   transfer: (amount: string, toUser: "user1" | "user2") => Promise<void>;
@@ -236,7 +236,7 @@ export const createYellowSessionManager = (
 
   const connectToYellow = async (): Promise<Client> => {
     if (yellowClient) return yellowClient;
-    
+
     logLine(logger, "Connecting to Yellow clearnet...");
     yellowClient = new Client({
       url: "wss://clearnet-sandbox.yellow.com/ws",
@@ -247,15 +247,15 @@ export const createYellowSessionManager = (
   };
 
   // ========== CREATOR FLOW ==========
-  
-  // Creator creates session and invite using predefined User 2 address
-  const createSession = async (): Promise<string> => {
+
+  // Creator creates session and invite for a specific joiner address
+  const createSession = async (joinerAddress: `0x${string}`): Promise<string> => {
     const account = getAccount();
     if (!account) {
       throw new Error("No wallet connected. Please connect your wallet first.");
     }
-    if (!YELLOW_WALLET_2_SEED_PHRASE) {
-      throw new Error("Missing VITE_WALLET_2_SEED_PHRASE");
+    if (!joinerAddress || !joinerAddress.startsWith("0x")) {
+      throw new Error("Invalid joiner address. Please provide a valid Ethereum address.");
     }
 
     setState({ status: "connecting", role: "creator" });
@@ -273,26 +273,22 @@ export const createYellowSessionManager = (
         transport: custom(window.ethereum as Parameters<typeof custom>[0]),
       });
 
-      // Derive User 2's address from seed phrase
-      const wallet2Account = mnemonicToAccount(YELLOW_WALLET_2_SEED_PHRASE);
-      const joinerAddr = wallet2Account.address as `0x${string}`;
-
       logLine(logger, "Authenticating as session creator...");
       const sessionKey = await authenticateWallet(client, walletClient, logger);
       messageSigner = createECDSAMessageSigner(sessionKey.privateKey);
 
       const userAddress = walletClient.account?.address as `0x${string}`;
       user1Addr = userAddress;
-      user2Addr = joinerAddr;
+      user2Addr = joinerAddress;
       sessionNonce = Date.now();
 
-      logLine(logger, `User 1: ${userAddress}`);
-      logLine(logger, `User 2: ${joinerAddr}`);
+      logLine(logger, `User 1 (Creator): ${userAddress}`);
+      logLine(logger, `User 2 (Joiner): ${joinerAddress}`);
       logLine(logger, `Creating invite...`);
 
       const appDefinition: RPCAppDefinition = {
         protocol: RPCProtocolVersion.NitroRPC_0_4,
-        participants: [user1Addr, joinerAddr],
+        participants: [user1Addr, joinerAddress],
         weights: [50, 50],
         quorum: 50, // Allow either party to update state (for collaborative editing)
         challenge: 0,
@@ -302,7 +298,7 @@ export const createYellowSessionManager = (
 
       const initialAllocations = [
         { participant: user1Addr, asset: "ytest.usd", amount: "1.00" },
-        { participant: joinerAddr, asset: "ytest.usd", amount: "0.00" },
+        { participant: joinerAddress, asset: "ytest.usd", amount: "0.00" },
       ] as RPCAppSessionAllocation[];
 
       // Creator signs the session message
@@ -315,7 +311,7 @@ export const createYellowSessionManager = (
 
       const invite: SessionInvite = {
         creatorAddress: user1Addr,
-        joinerAddress: joinerAddr,
+        joinerAddress: joinerAddress,
         req: parsed.req,
         sig: parsed.sig,
         nonce: sessionNonce,
@@ -326,7 +322,7 @@ export const createYellowSessionManager = (
       setState({
         status: "invite_ready",
         user1Address: userAddress,
-        user2Address: joinerAddr,
+        user2Address: joinerAddress,
         invite: inviteCode,
         basket: { companies: [], stakes: {} }, // Initialize basket so form can be shown
       });
@@ -337,11 +333,11 @@ export const createYellowSessionManager = (
       // Poll for session creation since Yellow doesn't broadcast to creator
       let pollCount = 0;
       const maxPolls = 60; // Poll for max 2 minutes
-      
+
       const pollForSession = async () => {
         pollCount++;
         logLine(logger, `Polling for session... (${pollCount}/${maxPolls})`);
-        
+
         if (state.status !== "invite_ready") {
           logLine(logger, `Stopping poll - status changed to ${state.status}`);
           return;
@@ -354,77 +350,77 @@ export const createYellowSessionManager = (
           logLine(logger, `Stopping poll - max attempts reached`);
           return;
         }
-        
+
         try {
           // Request app sessions
           const reqId = Date.now();
           const reqData: RPCData = [reqId, RPCMethod.GetAppSessions, {}, reqId];
           const sig = await messageSigner(reqData);
-          
+
           const getSessionsReq = JSON.stringify({
             req: reqData,
             sig: [sig],
           });
-          
+
           logLine(logger, `Sending get_app_sessions request...`);
           const response = await yellowClient.sendMessage(getSessionsReq) as RPCResponse;
           logLine(logger, `Got response: ${JSON.stringify(response).slice(0, 500)}`);
-          
+
           // Yellow returns appSessions (camelCase)
-          const params = response.params as { 
-            appSessions?: Array<{ 
-              appSessionId: `0x${string}`; 
+          const params = response.params as {
+            appSessions?: Array<{
+              appSessionId: `0x${string}`;
               participants?: string[];
-              allocations?: Array<{ participant: string; asset: string; amount: string }> 
-            }> 
+              allocations?: Array<{ participant: string; asset: string; amount: string }>
+            }>
           } | undefined;
-          
+
           if (params?.appSessions && params.appSessions.length > 0) {
             logLine(logger, `Found ${params.appSessions.length} session(s)`);
-            
+
             // Find a session with our participants
             for (const session of params.appSessions) {
               logLine(logger, `Checking session ${session.appSessionId}: participants=${JSON.stringify(session.participants)}, allocations=${JSON.stringify(session.allocations)}`);
-              
+
               // Check by participants array or allocations
               let hasUser1 = false;
               let hasUser2 = false;
-              
+
               if (session.participants) {
                 hasUser1 = session.participants.some(p => p.toLowerCase() === user1Addr?.toLowerCase());
                 hasUser2 = session.participants.some(p => p.toLowerCase() === user2Addr?.toLowerCase());
               }
-              
+
               if (session.allocations) {
                 hasUser1 = hasUser1 || session.allocations.some(a => a.participant.toLowerCase() === user1Addr?.toLowerCase());
                 hasUser2 = hasUser2 || session.allocations.some(a => a.participant.toLowerCase() === user2Addr?.toLowerCase());
               }
-              
+
               if (hasUser1 && hasUser2) {
                 currentAppSessionId = session.appSessionId;
                 stateVersion = (session as { version?: number }).version || 1; // Capture current version
                 const user1Alloc = session.allocations?.find(a => a.participant.toLowerCase() === user1Addr?.toLowerCase());
                 const user2Alloc = session.allocations?.find(a => a.participant.toLowerCase() === user2Addr?.toLowerCase());
-                
+
                 logLine(logger, `Our session found: ${session.appSessionId}, version: ${stateVersion}`);
                 setState({
                   status: "active",
                   appSessionId: session.appSessionId,
-                  allocations: { 
-                    user1: user1Alloc?.amount || "1.00", 
-                    user2: user2Alloc?.amount || "0.00" 
+                  allocations: {
+                    user1: user1Alloc?.amount || "1.00",
+                    user2: user2Alloc?.amount || "0.00"
                   },
                   basket: { companies: [], stakes: {} }, // Initialize empty basket
                 });
                 return; // Stop polling
               }
             }
-            
+
             logLine(logger, `No matching session found yet`);
           } else {
             logLine(logger, `No sessions in response`);
           }
-          
+
           // Continue polling
           setTimeout(pollForSession, 2000);
         } catch (err) {
@@ -433,7 +429,7 @@ export const createYellowSessionManager = (
           setTimeout(pollForSession, 3000);
         }
       };
-      
+
       // Start polling after a short delay
       logLine(logger, `Starting session poll...`);
       setTimeout(pollForSession, 2000);
@@ -441,41 +437,41 @@ export const createYellowSessionManager = (
       // Also listen for any session-related messages
       client.listen((message: RPCResponse) => {
         const method = message.method as string;
-        
+
         // Log all messages when session is active (for debugging)
         if (state.status === "active" || state.status === "invite_ready") {
           logLine(logger, `[Creator] Active msg: ${method} - ${JSON.stringify(message.params).slice(0, 200)}`);
         }
-        
+
         // App session update (asu) indicates state change - this is how we detect User 2 joined
         if (method === "asu") {
-          const params = message.params as { 
+          const params = message.params as {
             appSessionId?: `0x${string}`;
             allocations?: { participant: string; asset?: string; amount: string }[];
             version?: number;
             sessionData?: string; // camelCase in response
           } | undefined;
-          
+
           // If we're in invite_ready and receive an asu with our session, transition to active
           if (state.status === "invite_ready" && params?.appSessionId) {
             logLine(logger, `Received asu during invite_ready - session is now active: ${params.appSessionId}`);
             currentAppSessionId = params.appSessionId;
           }
-          
+
           // Also update appSessionId if we already have one but receive a different one (shouldn't happen)
           if (params?.appSessionId && !currentAppSessionId) {
             logLine(logger, `Setting currentAppSessionId from asu: ${params.appSessionId}`);
             currentAppSessionId = params.appSessionId;
           }
-          
+
           // Update version from incoming state
           if (params?.version && params.version > stateVersion) {
             stateVersion = params.version;
             logLine(logger, `Version updated to ${stateVersion}`);
           }
-          
+
           const stateUpdate: Partial<YellowSessionState> = {};
-          
+
           // Transition to active if we were waiting
           if (state.status === "invite_ready" && params?.appSessionId) {
             stateUpdate.status = "active";
@@ -485,7 +481,7 @@ export const createYellowSessionManager = (
               stateUpdate.basket = { companies: [], stakes: {} };
             }
           }
-          
+
           // Parse basket from sessionData (this will override the empty basket if data exists)
           if (params?.sessionData) {
             try {
@@ -496,7 +492,7 @@ export const createYellowSessionManager = (
               logLine(logger, `Failed to parse sessionData: ${e}`);
             }
           }
-          
+
           if (params?.allocations && user1Addr && user2Addr) {
             // Find ytest.usd allocations for basic balances
             const user1Alloc = params.allocations.find(
@@ -505,13 +501,13 @@ export const createYellowSessionManager = (
             const user2Alloc = params.allocations.find(
               a => a.participant.toLowerCase() === user2Addr!.toLowerCase() && a.asset === "ytest.usd"
             );
-            
+
             if (user1Alloc && user2Alloc) {
               stateUpdate.allocations = { user1: user1Alloc.amount, user2: user2Alloc.amount };
               logLine(logger, `State update: User1=${user1Alloc.amount}, User2=${user2Alloc.amount}`);
             }
           }
-          
+
           if (Object.keys(stateUpdate).length > 0) {
             setState(stateUpdate);
           }
@@ -528,32 +524,37 @@ export const createYellowSessionManager = (
 
   // ========== JOINER FLOW ==========
 
-  // Joiner receives invite, adds signature, submits to Yellow
+  // Joiner receives invite, adds signature, submits to Yellow using their connected wallet
   const joinWithInvite = async (inviteCode: string): Promise<void> => {
-    if (!YELLOW_WALLET_2_SEED_PHRASE) {
-      throw new Error("Missing VITE_WALLET_2_SEED_PHRASE");
+    const account = getAccount();
+    if (!account) {
+      throw new Error("No wallet connected. Please connect your wallet first.");
     }
 
     setState({ status: "joining", role: "joiner" });
 
     try {
       const invite = decodeInvite(inviteCode);
-      
+
       logLine(logger, `Decoded invite from ${invite.creatorAddress}`);
 
       const client = await connectToYellow();
 
+      // Use the connected wallet with browser wallet transport for signing
+      if (typeof window === "undefined" || !window.ethereum) {
+        throw new Error("No wallet provider found. Please install MetaMask or another wallet.");
+      }
       const walletClient = createWalletClient({
-        account: mnemonicToAccount(YELLOW_WALLET_2_SEED_PHRASE),
+        account,
         chain: baseSepolia,
-        transport: http(),
+        transport: custom(window.ethereum as Parameters<typeof custom>[0]),
       });
 
       const joinerAddress = walletClient.account?.address as `0x${string}`;
 
       // Verify this invite is for us
       if (invite.joinerAddress.toLowerCase() !== joinerAddress.toLowerCase()) {
-        throw new Error(`This invite is for ${invite.joinerAddress}, but your address is ${joinerAddress}`);
+        throw new Error(`This invite is for ${invite.joinerAddress}, but your connected wallet is ${joinerAddress}`);
       }
 
       logLine(logger, "Authenticating as session joiner...");
@@ -602,22 +603,22 @@ export const createYellowSessionManager = (
       client.listen((message: RPCResponse) => {
         const method = message.method as string;
         logLine(logger, `[Joiner] Received: ${method} - ${JSON.stringify(message.params).slice(0, 200)}`);
-        
+
         if (method === "asu" || method === "submit_app_state") {
-          const params = message.params as { 
+          const params = message.params as {
             allocations?: { participant: string; asset?: string; amount: string }[];
             version?: number;
             sessionData?: string; // camelCase in response
           } | undefined;
-          
+
           // Update version from incoming state
           if (params?.version && params.version > stateVersion) {
             stateVersion = params.version;
             logLine(logger, `Version updated to ${stateVersion}`);
           }
-          
+
           const stateUpdate: Partial<YellowSessionState> = {};
-          
+
           // Parse basket from sessionData
           if (params?.sessionData) {
             try {
@@ -628,7 +629,7 @@ export const createYellowSessionManager = (
               logLine(logger, `Failed to parse sessionData: ${e}`);
             }
           }
-          
+
           if (params?.allocations && user1Addr && user2Addr) {
             // Find ytest.usd allocations for basic balances
             const user1Alloc = params.allocations.find(
@@ -637,13 +638,13 @@ export const createYellowSessionManager = (
             const user2Alloc = params.allocations.find(
               a => a.participant.toLowerCase() === user2Addr!.toLowerCase() && a.asset === "ytest.usd"
             );
-            
+
             if (user1Alloc && user2Alloc) {
               stateUpdate.allocations = { user1: user1Alloc.amount, user2: user2Alloc.amount };
               logLine(logger, `State update: User1=${user1Alloc.amount}, User2=${user2Alloc.amount}`);
             }
           }
-          
+
           if (Object.keys(stateUpdate).length > 0) {
             setState(stateUpdate);
           }
