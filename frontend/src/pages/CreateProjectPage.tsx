@@ -6,7 +6,6 @@ import { FACTORY_ADDRESS } from "../config";
 import { getWalletClient, publicClient } from "../lib/wagmi";
 import {
   createYellowSessionManager,
-  runYellowMultiPartySession,
   type YellowSessionState,
   type BasketState,
   type ProjectFormFields,
@@ -74,8 +73,11 @@ const CreateProjectPage = () => {
   const [sessionState, setSessionState] = useState<YellowSessionState>({ status: "idle" });
   const [inviteCode, setInviteCode] = useState("");
   const [joinerAddressInput, setJoinerAddressInput] = useState(""); // Address of the user to invite
-  const [legacyRunning, setLegacyRunning] = useState(false);
+  const [soloMode, setSoloMode] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Solo mode basket state
+  const [soloBasket, setSoloBasket] = useState<BasketState>({ companies: [], stakes: {} });
 
   // Collaborative basket state
   const [newCompanyName, setNewCompanyName] = useState("");
@@ -240,30 +242,10 @@ const CreateProjectPage = () => {
     }
   };
 
-  const runLegacyDemo = async () => {
-    if (!account) {
-      setYellowError("Connect wallet first");
-      return;
-    }
-    setYellowError(null);
-    setYellowLogs([]);
-    setLegacyRunning(true);
-    try {
-      // Note: runYellowMultiPartySession expects a viem Account, not just an address.
-      // This needs to be refactored to use a proper viem account or wallet client.
-      await runYellowMultiPartySession({ account: account as never, onLog: appendLog });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Yellow session failed";
-      setYellowError(msg);
-      appendLog(`Error: ${msg}`);
-    } finally {
-      setLegacyRunning(false);
-    }
-  };
-
   // Collaborative basket handlers
   const handleAddCompany = async () => {
-    if (sessionState.status !== "active" && sessionState.status !== "invite_ready") {
+    const isSoloModeActive = soloMode && sessionState.status === "idle";
+    if (sessionState.status !== "active" && sessionState.status !== "invite_ready" && !isSoloModeActive) {
       setYellowError("Create or join a session first");
       return;
     }
@@ -277,6 +259,32 @@ const CreateProjectPage = () => {
     }
     setYellowError(null);
     try {
+      // Solo mode - update soloBasket directly
+      if (isSoloModeActive) {
+        const trimmedName = newCompanyName.trim();
+        
+        if (soloBasket.companies.includes(trimmedName)) {
+          setYellowError(`Company "${trimmedName}" already exists`);
+          return;
+        }
+        
+        const userAddr = account?.toLowerCase() || "solo";
+        const stakeAmount = parseFloat(newCompanyStake);
+        
+        setSoloBasket(prev => ({
+          ...prev,
+          companies: [...prev.companies, trimmedName],
+          stakes: {
+            ...prev.stakes,
+            [trimmedName]: {
+              [userAddr]: stakeAmount.toFixed(2),
+            },
+          },
+        }));
+        setNewCompanyName("");
+        setNewCompanyStake("10");
+        return;
+      }
       // If invite_ready (waiting for joiner), update basket locally
       if (sessionState.status === "invite_ready") {
         const currentBasket = sessionState.basket || { companies: [], stakes: {} };
@@ -318,7 +326,8 @@ const CreateProjectPage = () => {
   };
 
   const handleTopUp = async (companyName: string) => {
-    if (sessionState.status !== "active" && sessionState.status !== "invite_ready") {
+    const isSoloModeActive = soloMode && sessionState.status === "idle";
+    if (sessionState.status !== "active" && sessionState.status !== "invite_ready" && !isSoloModeActive) {
       setYellowError("Create or join a session first");
       return;
     }
@@ -329,6 +338,26 @@ const CreateProjectPage = () => {
     }
     setYellowError(null);
     try {
+      // Solo mode - update soloBasket directly
+      if (isSoloModeActive) {
+        const userAddr = account?.toLowerCase() || "solo";
+        const stakeAmount = parseFloat(amount);
+        const currentStake = parseFloat(soloBasket.stakes[companyName]?.[userAddr] || "0");
+        const newStake = currentStake + stakeAmount;
+        
+        setSoloBasket(prev => ({
+          ...prev,
+          stakes: {
+            ...prev.stakes,
+            [companyName]: {
+              ...prev.stakes[companyName],
+              [userAddr]: newStake.toFixed(2),
+            },
+          },
+        }));
+        setTopUpAmounts((prev) => ({ ...prev, [companyName]: "" }));
+        return;
+      }
       // If invite_ready (waiting for joiner), update basket locally
       if (sessionState.status === "invite_ready") {
         const currentBasket = sessionState.basket || { companies: [], stakes: {} };
@@ -497,6 +526,87 @@ const CreateProjectPage = () => {
     return sessionState.basket?.stakes[companyName]?.[userAddr] || "0";
   };
 
+  const getSoloStake = (companyName: string): string => {
+    const userAddr = account?.toLowerCase() || "solo";
+    return soloBasket.stakes[companyName]?.[userAddr] || "0";
+  };
+
+  const handleSoloDeploy = async () => {
+    if (!FACTORY_ADDRESS) {
+      setMessage("Set VITE_FACTORY_ADDRESS to deploy");
+      return;
+    }
+
+    const companiesForSubmit = calculateWeightsFromBasket(soloBasket);
+
+    if (companiesForSubmit.length === 0) {
+      setMessage("Add at least one company");
+      return;
+    }
+
+    const totalWeight = companiesForSubmit.reduce((sum, c) => sum + c.weight, 0);
+    if (totalWeight !== 100) {
+      setMessage(`Weights must sum to 100% (currently ${totalWeight}%)`);
+      return;
+    }
+
+    if (!localFormFields.projectName) {
+      setMessage("Enter a project name");
+      return;
+    }
+
+    if (!isConnected) {
+      mutate({ connector: injected() });
+      return;
+    }
+
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      setMessage("Could not get wallet");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const minRaise = parseUnits(localFormFields.minimumRaise || "0", 6);
+      const deadlineTs = dateInputValueToUnixSeconds(localFormFields.deadline);
+      if (!Number.isFinite(deadlineTs)) {
+        setMessage("Select a valid deadline");
+        setSubmitting(false);
+        return;
+      }
+      const raiseFeeBps = Math.round((parseFloat(localFormFields.raiseFeePct || "0") || 0) * 100);
+      const profitFeeBps = Math.round((parseFloat(localFormFields.profitFeePct || "0") || 0) * 100);
+
+      if (raiseFeeBps > 10_000 || profitFeeBps > 10_000) {
+        setMessage("Fees cannot exceed 100%");
+        setSubmitting(false);
+        return;
+      }
+
+      const hash = await writeFactory.createProject(walletClient, {
+        projectName: localFormFields.projectName,
+        companyNames: companiesForSubmit.map((c) => c.name),
+        companyWeights: companiesForSubmit.map((c) => BigInt(c.weight)),
+        minimumRaise: minRaise,
+        deadline: BigInt(deadlineTs),
+        withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
+        raiseFeeBps: BigInt(raiseFeeBps),
+        profitFeeBps: BigInt(profitFeeBps),
+      });
+
+      await publicClient.waitForTransactionReceipt({ hash });
+      setMessage("Project created! Refresh home to see it.");
+      setSoloMode(false);
+      setSoloBasket({ companies: [], stakes: {} });
+    } catch (err) {
+      console.error(err);
+      setMessage("Transaction failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
@@ -586,7 +696,10 @@ const CreateProjectPage = () => {
   const isJoining = sessionState.status === "joining";
   const isActive = sessionState.status === "active";
   const isClosed = sessionState.status === "closed";
-  const canEditForm = isActive || isInviteReady; // Show form when active or waiting for joiner
+  const canEditForm = isActive || isInviteReady || soloMode; // Show form when active, waiting for joiner, or solo mode
+
+  // Use solo basket when in solo mode, otherwise session basket
+  const activeBasket = soloMode && isIdle ? soloBasket : sessionState.basket;
 
   return (
     <div className="card-frame rounded-lg p-6">
@@ -613,7 +726,7 @@ const CreateProjectPage = () => {
         </div>
 
         {/* Idle State - Choose Role */}
-        {isIdle && (
+        {isIdle && !soloMode && (
           <div className="space-y-4">
             <p className="text-[10px] text-stone-400">
               Create a session and share the invite code, or join with an invite code from another device.
@@ -669,15 +782,14 @@ const CreateProjectPage = () => {
               </div>
             </div>
 
-            {/* Legacy Demo */}
-            <div className="border-t border-dirt/30 pt-3">
+            {/* Solo Mode */}
+            <div className="border-t border-dirt/30 pt-3 text-center">
               <button
                 type="button"
-                onClick={runLegacyDemo}
+                onClick={() => setSoloMode(true)}
                 className="text-[10px] text-stone-400 underline hover:text-stone-300"
-                disabled={legacyRunning}
               >
-                {legacyRunning ? "Running..." : "Run automated demo (both wallets locally)"}
+                Create form solo
               </button>
             </div>
           </div>
@@ -801,6 +913,25 @@ const CreateProjectPage = () => {
           </div>
         )}
 
+        {/* Solo Mode State */}
+        {soloMode && isIdle && (
+          <div className="space-y-3">
+            <div className="rounded bg-purple-900/20 p-3 text-center">
+              <p className="text-purple-300">Solo Mode</p>
+              <p className="mt-1 text-[10px] text-stone-400">
+                Create a project without a collaborative session
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSoloMode(false)}
+              className="rounded border border-stone-600 px-3 py-2 text-[10px] text-stone-400 hover:bg-stone-800"
+            >
+              Exit Solo Mode
+            </button>
+          </div>
+        )}
+
         {/* Error */}
         {yellowError && (
           <p className="mt-2 rounded bg-red-900/30 p-2 text-[10px] text-red-300">
@@ -818,8 +949,8 @@ const CreateProjectPage = () => {
         )}
       </div>
 
-      {/* Project Creation Form - Shown when session is active or invite ready */}
-      {canEditForm && sessionState.basket && (
+      {/* Project Creation Form - Shown when session is active, invite ready, or solo mode */}
+      {canEditForm && (soloMode || sessionState.basket) && (
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           {/* Finalization Voting Card */}
           {finalizationRequest && isActive && (
@@ -1018,10 +1149,10 @@ const CreateProjectPage = () => {
                 </div>
               )}
 
-              {/* Add new company - enabled when session is active or invite_ready (solo mode) */}
-              <div className={`rounded border-2 p-3 ${(isActive || isInviteReady) && !isEditingLocked ? "border-green-800/50 bg-green-900/10" : "border-stone-700/50 bg-stone-900/10"} ${isEditingLocked ? "opacity-60" : ""}`}>
-                <p className={`mb-2 text-[10px] ${(isActive || isInviteReady) && !isEditingLocked ? "text-green-300" : "text-stone-400"}`}>
-                  Add a company {isInviteReady && "(solo mode - changes saved locally)"}{isEditingLocked && "(locked during voting)"}
+              {/* Add new company - enabled when session is active, invite_ready, or solo mode */}
+              <div className={`rounded border-2 p-3 ${(isActive || isInviteReady || soloMode) && !isEditingLocked ? "border-green-800/50 bg-green-900/10" : "border-stone-700/50 bg-stone-900/10"} ${isEditingLocked ? "opacity-60" : ""}`}>
+                <p className={`mb-2 text-[10px] ${(isActive || isInviteReady || soloMode) && !isEditingLocked ? "text-green-300" : "text-stone-400"}`}>
+                  Add a company {(isInviteReady || soloMode) && "(changes saved locally)"}{isEditingLocked && "(locked during voting)"}
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -1029,7 +1160,7 @@ const CreateProjectPage = () => {
                     value={newCompanyName}
                     onChange={(e) => setNewCompanyName(e.target.value)}
                     placeholder="Company name"
-                    disabled={(!isActive && !isInviteReady) || isEditingLocked}
+                    disabled={(!isActive && !isInviteReady && !soloMode) || isEditingLocked}
                   />
                   <input
                     className="input-blocky w-24 rounded px-3 py-2 text-center"
@@ -1039,31 +1170,31 @@ const CreateProjectPage = () => {
                     placeholder="Stake"
                     min="0.01"
                     step="0.01"
-                    max={remainingBalance.toString()}
-                    disabled={(!isActive && !isInviteReady) || isEditingLocked}
+                    max={soloMode ? undefined : remainingBalance.toString()}
+                    disabled={(!isActive && !isInviteReady && !soloMode) || isEditingLocked}
                   />
                   <button
                     type="button"
                     onClick={handleAddCompany}
                     className="button-blocky rounded px-4 py-2"
-                    disabled={(!isActive && !isInviteReady) || isEditingLocked || parseFloat(newCompanyStake || "0") > remainingBalance}
+                    disabled={(!isActive && !isInviteReady && !soloMode) || isEditingLocked || (!soloMode && parseFloat(newCompanyStake || "0") > remainingBalance)}
                   >
                     Add
                   </button>
                 </div>
                 <p className="mt-1 text-[10px] text-stone-500">
-                  {isEditingLocked ? "Editing locked during finalization vote." : isActive ? `Initial stake in ytest.USD. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : isInviteReady ? `Build your basket now. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : "Create a session first."}
+                  {isEditingLocked ? "Editing locked during finalization vote." : soloMode ? "Enter weight amounts for each company." : isActive ? `Initial stake in ytest.USD. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : isInviteReady ? `Build your basket now. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : "Create a session first."}
                 </p>
               </div>
 
               {/* List of companies with stakes */}
-              {sessionState.basket.companies.length > 0 ? (
+              {activeBasket && activeBasket.companies.length > 0 ? (
                 <div className="space-y-2">
-                  {sessionState.basket.companies.map((companyName) => {
-                    const user1Stake = getUserStake(companyName, sessionState.user1Address || "");
-                    const user2Stake = getUserStake(companyName, sessionState.user2Address || "");
-                    const totalStake = getCompanyTotalStake(companyName);
-                    const basketWeights = calculateWeightsFromBasket(sessionState.basket!);
+                  {activeBasket.companies.map((companyName) => {
+                    const user1Stake = soloMode ? getSoloStake(companyName) : getUserStake(companyName, sessionState.user1Address || "");
+                    const user2Stake = soloMode ? "0" : getUserStake(companyName, sessionState.user2Address || "");
+                    const totalStake = soloMode ? parseFloat(getSoloStake(companyName)) : getCompanyTotalStake(companyName);
+                    const basketWeights = calculateWeightsFromBasket(activeBasket);
                     const weight = basketWeights.find(w => w.name === companyName)?.weight || 0;
 
                     return (
@@ -1074,20 +1205,27 @@ const CreateProjectPage = () => {
                             {weight}% weight
                           </span>
                         </div>
-                        <div className="mb-2 grid grid-cols-3 gap-2 text-[10px]">
-                          <div>
-                            <p className="text-stone-500">Host stake</p>
-                            <p className="text-sky-300">${user1Stake}</p>
+                        {soloMode ? (
+                          <div className="mb-2 text-[10px]">
+                            <p className="text-stone-500">Your stake</p>
+                            <p className="text-green-300">${user1Stake}</p>
                           </div>
-                          <div>
-                            <p className="text-stone-500">Joiner stake</p>
-                            <p className="text-amber-300">${user2Stake}</p>
+                        ) : (
+                          <div className="mb-2 grid grid-cols-3 gap-2 text-[10px]">
+                            <div>
+                              <p className="text-stone-500">Host stake</p>
+                              <p className="text-sky-300">${user1Stake}</p>
+                            </div>
+                            <div>
+                              <p className="text-stone-500">Joiner stake</p>
+                              <p className="text-amber-300">${user2Stake}</p>
+                            </div>
+                            <div>
+                              <p className="text-stone-500">Total</p>
+                              <p className="text-green-300">${totalStake.toFixed(2)}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-stone-500">Total</p>
-                            <p className="text-green-300">${totalStake.toFixed(2)}</p>
-                          </div>
-                        </div>
+                        )}
                         <div className={`flex items-center gap-2 ${isEditingLocked ? "opacity-60" : ""}`}>
                           <input
                             className="input-blocky w-20 rounded px-2 py-1 text-center text-[10px]"
@@ -1102,14 +1240,14 @@ const CreateProjectPage = () => {
                             placeholder="Amount"
                             min="0.01"
                             step="0.01"
-                            max={remainingBalance.toString()}
-                            disabled={isEditingLocked || remainingBalance <= 0 || (!isActive && !isInviteReady)}
+                            max={soloMode ? undefined : remainingBalance.toString()}
+                            disabled={isEditingLocked || (!soloMode && remainingBalance <= 0) || (!isActive && !isInviteReady && !soloMode)}
                           />
                           <button
                             type="button"
                             onClick={() => handleTopUp(companyName)}
                             className="rounded border border-green-700 px-2 py-1 text-[10px] text-green-300 hover:bg-green-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={isEditingLocked || remainingBalance <= 0 || parseFloat(topUpAmounts[companyName] || "0") > remainingBalance || (!isActive && !isInviteReady)}
+                            disabled={isEditingLocked || (!soloMode && remainingBalance <= 0) || (!soloMode && parseFloat(topUpAmounts[companyName] || "0") > remainingBalance) || (!isActive && !isInviteReady && !soloMode)}
                           >
                             + Top Up
                           </button>
@@ -1128,15 +1266,15 @@ const CreateProjectPage = () => {
               )}
 
               {/* Summary */}
-              {sessionState.basket.companies.length > 0 && (
+              {activeBasket && activeBasket.companies.length > 0 && (
                 <div className="rounded bg-stone-800/50 p-2 text-[10px]">
                   <p className="text-stone-400">
                     Total weight:{" "}
                     <span className="text-stone-200">
-                      {calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0)}%
+                      {calculateWeightsFromBasket(activeBasket).reduce((sum, c) => sum + c.weight, 0)}%
                     </span>
                     {" | "}
-                    Companies: <span className="text-stone-200">{sessionState.basket.companies.length}</span>
+                    Companies: <span className="text-stone-200">{activeBasket.companies.length}</span>
                   </p>
                 </div>
               )}
@@ -1179,6 +1317,37 @@ const CreateProjectPage = () => {
             </div>
           )}
 
+          {/* Solo Mode Deploy Button */}
+          {soloMode && isIdle && soloBasket.companies.length > 0 && (
+            <div className="rounded border-4 border-purple-800/50 bg-purple-900/10 p-4">
+              <p className="mb-2 text-[10px] text-stone-400">
+                Deploy your project directly without a collaborative session.
+              </p>
+              <button
+                type="button"
+                onClick={handleSoloDeploy}
+                className="button-blocky w-full rounded px-4 py-3 text-xs uppercase"
+                disabled={
+                  submitting ||
+                  !localFormFields.projectName ||
+                  calculateWeightsFromBasket(soloBasket).reduce((sum, c) => sum + c.weight, 0) !== 100
+                }
+              >
+                {submitting ? "Deploying..." : "Deploy Project"}
+              </button>
+              {calculateWeightsFromBasket(soloBasket).reduce((sum, c) => sum + c.weight, 0) !== 100 && (
+                <p className="mt-1 text-[10px] text-amber-400">
+                  Weights must sum to 100% before deploying
+                </p>
+              )}
+              {!localFormFields.projectName && (
+                <p className="mt-1 text-[10px] text-amber-400">
+                  Enter a project name before deploying
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Propose Finalization Button - only when session active, no finalization in progress, and form is valid */}
           {isActive && !finalizationRequest && sessionState.basket && sessionState.basket.companies.length > 0 && (
             <div className="rounded border-2 border-green-800/50 bg-green-900/10 p-4">
@@ -1211,7 +1380,7 @@ const CreateProjectPage = () => {
           )}
 
           {/* Legacy submit button - hidden when we have explicit deploy options above */}
-          {!isActive && !isInviteReady && (
+          {!isActive && !isInviteReady && !soloMode && (
             <button
               type="submit"
               className="button-blocky rounded px-4 py-3 text-xs uppercase"
