@@ -706,20 +706,25 @@ const CreateProjectPage = () => {
       <h1 className="mb-4 text-lg text-sky-200">Create a project</h1>
 
       {/* Yellow Session UI */}
-      <div className="mb-6 rounded border-4 border-dirt p-4 text-xs">
-        <div className="mb-3 flex items-center justify-between">
+      <div className="mb-6 rounded-lg bg-stone-900/50 p-5 text-sm">
+        <div className="mb-4 flex items-center justify-between">
           {!isIdle && (
             <span
-              className={`rounded px-2 py-0.5 text-[10px] uppercase ${
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
                 isActive
-                  ? "bg-green-900 text-green-300"
+                  ? "bg-green-900/60 text-green-300"
                   : isInviteReady
-                    ? "bg-yellow-900 text-yellow-300"
+                    ? "bg-yellow-900/60 text-yellow-300"
                     : isClosed
-                      ? "bg-stone-700 text-stone-300"
-                      : "bg-sky-900 text-sky-300"
+                      ? "bg-stone-700/60 text-stone-300"
+                      : "bg-sky-900/60 text-sky-300"
               }`}
             >
+              {isActive && (
+                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              )}
               {sessionState.status.replace(/_/g, " ")}
             </span>
           )}
@@ -727,55 +732,71 @@ const CreateProjectPage = () => {
 
         {/* Idle State - Choose Role */}
         {isIdle && !soloMode && (
-          <div className="space-y-4">
-            <p className="text-[10px] text-stone-400">
+          <div className="space-y-5">
+            <p className="text-sm text-stone-400">
               Create a session and share the invite code, or join with an invite code from another device.
             </p>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-5 md:grid-cols-2">
               {/* Creator Flow */}
-              <div className="flex flex-col rounded border-2 border-sky-800/50 bg-sky-900/10 p-3">
-                <p className="mb-2 font-medium text-sky-300">Host (User 1)</p>
-                <p className="mb-3 text-[10px] text-stone-400">
+              <div className="flex flex-col rounded-lg bg-sky-950/40 p-4 transition-colors hover:bg-sky-950/50">
+                <div className="mb-3 flex items-center justify-center gap-2">
+                  <svg className="h-5 w-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  <span className="text-base font-semibold text-sky-300">Host</span>
+                </div>
+                <p className="mb-4 text-center text-sm text-stone-400">
                   Enter your collaborator's wallet address, then create a session.
                 </p>
-                <div className="mt-auto space-y-2">
+                <div className="mt-auto space-y-3">
                   <input
                     type="text"
                     value={joinerAddressInput}
                     onChange={(e) => setJoinerAddressInput(e.target.value)}
                     placeholder="Collaborator's wallet address (0x...)"
-                    className="input-blocky w-full rounded px-3 py-2 font-mono text-[10px]"
+                    className="input-blocky w-full rounded-lg px-3 py-2.5 font-mono text-xs"
                   />
                   <button
                     type="button"
                     onClick={handleCreateSession}
-                    className="button-blocky w-full rounded px-3 py-2"
+                    className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5"
                     disabled={isConnecting || !joinerAddressInput.trim()}
                   >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
                     Create Session
                   </button>
                 </div>
               </div>
 
               {/* Joiner Flow */}
-              <div className="flex flex-col rounded border-2 border-amber-800/50 bg-amber-900/10 p-3">
-                <p className="mb-2 font-medium text-amber-300">Join (User 2)</p>
-                <p className="mb-3 text-[10px] text-stone-400">
+              <div className="flex flex-col rounded-lg bg-amber-950/40 p-4 transition-colors hover:bg-amber-950/50">
+                <div className="mb-3 flex items-center justify-center gap-2">
+                  <svg className="h-5 w-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  </svg>
+                  <span className="text-base font-semibold text-amber-300">Join</span>
+                </div>
+                <p className="mb-4 text-center text-sm text-stone-400">
                   Paste the invite code from the host.
                 </p>
-                <div className="mt-auto space-y-2">
+                <div className="mt-auto space-y-3">
                   <textarea
                     value={inviteCode}
                     onChange={(e) => setInviteCode(e.target.value)}
                     placeholder="Paste invite code here..."
-                    className="input-blocky h-16 w-full resize-none rounded px-3 py-2 font-mono text-[9px]"
+                    className="input-blocky h-16 w-full resize-none rounded-lg px-3 py-2.5 font-mono text-[10px]"
                   />
                   <button
                     type="button"
                     onClick={handleJoinWithInvite}
-                    className="button-blocky w-full rounded px-4 py-2"
+                    className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2.5"
                     disabled={isJoining || !inviteCode.trim()}
                   >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14" />
+                    </svg>
                     Join Session
                   </button>
                 </div>
@@ -783,12 +804,15 @@ const CreateProjectPage = () => {
             </div>
 
             {/* Solo Mode */}
-            <div className="border-t border-dirt/30 pt-3 text-center">
+            <div className="pt-3 text-center">
               <button
                 type="button"
                 onClick={() => setSoloMode(true)}
-                className="text-[10px] text-stone-400 underline hover:text-stone-300"
+                className="inline-flex cursor-pointer items-center gap-1.5 text-sm text-stone-500 underline transition-colors hover:text-stone-300"
               >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
                 Create form solo
               </button>
             </div>
@@ -797,58 +821,89 @@ const CreateProjectPage = () => {
 
         {/* Connecting State */}
         {(isConnecting || isJoining) && (
-          <div className="py-4 text-center">
-            <div className="mb-2 text-stone-300">
+          <div className="py-6 text-center">
+            <svg className="mx-auto mb-3 h-8 w-8 animate-spin text-sky-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            <p className="text-base text-stone-300">
               {isJoining ? "Joining session..." : "Creating session..."}
-            </div>
-            <p className="text-[10px] text-stone-400">Authenticating with Yellow Network</p>
+            </p>
+            <p className="mt-1 text-sm text-stone-500">Authenticating with Yellow Network</p>
           </div>
         )}
 
         {/* Creator: Invite Ready */}
         {isInviteReady && sessionState.invite && (
           <div className="space-y-4">
-            <div className="rounded bg-green-900/20 p-3">
-              <p className="mb-2 text-center text-stone-300">Session invite created!</p>
-              <div className="grid grid-cols-2 gap-2 text-[10px]">
-                <div>
-                  <p className="text-stone-500">User 1 (You):</p>
-                  <p className="font-mono text-sky-300">{shortAddress(sessionState.user1Address || "")}</p>
+            <div className="rounded-lg bg-green-900/30 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2">
+                <svg className="h-5 w-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-base font-medium text-stone-200">Session invite created!</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg bg-black/20 p-2.5 text-center">
+                  <p className="text-xs text-stone-500">You (Host)</p>
+                  <p className="mt-1 font-mono text-sky-300">{shortAddress(sessionState.user1Address || "")}</p>
                 </div>
-                <div>
-                  <p className="text-stone-500">User 2:</p>
-                  <p className="font-mono text-amber-300">{shortAddress(sessionState.user2Address || "")}</p>
+                <div className="rounded-lg bg-black/20 p-2.5 text-center">
+                  <p className="text-xs text-stone-500">Collaborator</p>
+                  <p className="mt-1 font-mono text-amber-300">{shortAddress(sessionState.user2Address || "")}</p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded border-2 border-yellow-800/50 bg-yellow-900/10 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-[10px] text-stone-400">Share this invite code:</p>
+            <div className="rounded-lg bg-yellow-950/40 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="flex items-center gap-1.5 text-sm text-stone-300">
+                  <svg className="h-4 w-4 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                  Share this invite code
+                </p>
                 <button
                   type="button"
                   onClick={() => copyToClipboard(sessionState.invite!)}
-                  className="rounded border border-yellow-700 px-2 py-0.5 text-[10px] text-yellow-300 hover:bg-yellow-900/30"
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-yellow-800/50 px-3 py-1.5 text-sm font-medium text-yellow-200 transition-colors hover:bg-yellow-800/70"
                 >
-                  {copied ? "Copied!" : "Copy"}
+                  {copied ? (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      Copy
+                    </>
+                  )}
                 </button>
               </div>
               <textarea
                 readOnly
                 value={sessionState.invite}
-                className="h-20 w-full resize-none rounded bg-black/30 p-2 font-mono text-[8px] text-yellow-200"
+                className="h-20 w-full resize-none rounded-lg bg-black/40 p-3 font-mono text-[10px] text-yellow-200"
               />
             </div>
 
-            <p className="text-center text-[10px] text-stone-400">
-              Send this code to User 2. They paste it on their device to join.
+            <p className="text-center text-sm text-stone-500">
+              Send this code to your collaborator. They paste it on their device to join.
             </p>
 
             <button
               type="button"
               onClick={handleDisconnect}
-              className="w-full rounded border border-stone-600 px-3 py-1 text-stone-400 hover:bg-stone-800"
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-stone-700 px-4 py-2.5 text-sm text-stone-400 transition-colors hover:bg-stone-800"
             >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
               Cancel
             </button>
           </div>
@@ -857,36 +912,52 @@ const CreateProjectPage = () => {
         {/* Active State */}
         {isActive && (
           <div className="space-y-4">
-            <div className="rounded bg-green-900/20 p-3">
-              <p className="mb-2 text-center text-[10px] text-stone-400">Session Active</p>
-              <p className="text-center font-mono text-[10px] text-stone-500">
-                {sessionState.appSessionId?.slice(0, 20)}...
+            <div className="rounded-lg bg-green-900/30 p-4">
+              <div className="mb-3 flex items-center justify-center gap-2">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
+                <span className="text-sm font-medium text-stone-300">Session Active</span>
+              </div>
+              <p className="mb-3 text-center font-mono text-xs text-stone-500">
+                {sessionState.appSessionId?.slice(0, 24)}...
               </p>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
-                <div className="text-center">
-                  <p className="text-stone-500">Host</p>
-                  <p className="font-mono text-sky-300">{shortAddress(sessionState.user1Address || "")}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg bg-black/20 p-2.5 text-center">
+                  <div className="mb-1 flex items-center justify-center gap-1.5 text-xs text-stone-500">
+                    <svg className="h-3 w-3 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    Host
+                  </div>
+                  <p className="font-mono text-sm text-sky-300">{shortAddress(sessionState.user1Address || "")}</p>
                 </div>
-                <div className="text-center">
-                  <p className="text-stone-500">Joiner</p>
-                  <p className="font-mono text-amber-300">{shortAddress(sessionState.user2Address || "")}</p>
+                <div className="rounded-lg bg-black/20 p-2.5 text-center">
+                  <div className="mb-1 flex items-center justify-center gap-1.5 text-xs text-stone-500">
+                    <svg className="h-3 w-3 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                    </svg>
+                    Joiner
+                  </div>
+                  <p className="font-mono text-sm text-amber-300">{shortAddress(sessionState.user2Address || "")}</p>
                 </div>
               </div>
             </div>
 
             {/* Session Actions */}
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <button
                 type="button"
                 onClick={handleCloseSession}
-                className="flex-1 rounded bg-red-900/50 px-3 py-2 text-red-300 hover:bg-red-900/70"
+                className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-red-900/40 px-4 py-2.5 text-sm text-red-300 transition-colors hover:bg-red-900/60"
               >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
                 Close Session
               </button>
               <button
                 type="button"
                 onClick={handleDisconnect}
-                className="rounded border border-stone-600 px-3 py-2 text-stone-400 hover:bg-stone-800"
+                className="cursor-pointer rounded-lg border border-stone-700 px-4 py-2.5 text-sm text-stone-400 transition-colors hover:bg-stone-800"
               >
                 Disconnect
               </button>
@@ -896,18 +967,24 @@ const CreateProjectPage = () => {
 
         {/* Closed State */}
         {isClosed && (
-          <div className="space-y-3">
-            <div className="rounded bg-stone-800 p-3 text-center">
-              <p className="text-stone-300">Session closed</p>
-              <p className="mt-1 text-[10px] text-stone-400">
+          <div className="space-y-4">
+            <div className="rounded-lg bg-stone-800/60 p-4 text-center">
+              <svg className="mx-auto mb-2 h-8 w-8 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-base text-stone-300">Session closed</p>
+              <p className="mt-1 text-sm text-stone-500">
                 Final balances have been settled
               </p>
             </div>
             <button
               type="button"
               onClick={handleDisconnect}
-              className="button-blocky w-full rounded px-3 py-2"
+              className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2.5"
             >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
               Start New Session
             </button>
           </div>
@@ -915,18 +992,26 @@ const CreateProjectPage = () => {
 
         {/* Solo Mode State */}
         {soloMode && isIdle && (
-          <div className="space-y-3">
-            <div className="rounded bg-purple-900/20 p-3 text-center">
-              <p className="text-purple-300">Solo Mode</p>
-              <p className="mt-1 text-[10px] text-stone-400">
+          <div className="space-y-4">
+            <div className="rounded-lg bg-purple-950/40 p-4 text-center">
+              <div className="mb-2 flex items-center justify-center gap-2">
+                <svg className="h-5 w-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="text-base font-medium text-purple-300">Solo Mode</span>
+              </div>
+              <p className="text-sm text-stone-400">
                 Create a project without a collaborative session
               </p>
             </div>
             <button
               type="button"
               onClick={() => setSoloMode(false)}
-              className="rounded border border-stone-600 px-3 py-2 text-[10px] text-stone-400 hover:bg-stone-800"
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-stone-700 px-4 py-2.5 text-sm text-stone-400 transition-colors hover:bg-stone-800"
             >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
               Exit Solo Mode
             </button>
           </div>
@@ -934,14 +1019,17 @@ const CreateProjectPage = () => {
 
         {/* Error */}
         {yellowError && (
-          <p className="mt-2 rounded bg-red-900/30 p-2 text-[10px] text-red-300">
-            {yellowError}
-          </p>
+          <div className="mt-3 flex items-start gap-2 rounded-lg bg-red-900/30 p-3">
+            <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-red-300">{yellowError}</p>
+          </div>
         )}
 
         {/* Logs */}
         {yellowLogs.length > 0 && (
-          <div className="mt-3 max-h-32 overflow-y-auto rounded border-2 border-dirt/50 bg-black/30 p-2 font-mono text-[10px] text-stone-400">
+          <div className="mt-4 max-h-32 overflow-y-auto rounded-lg bg-black/40 p-3 font-mono text-xs text-stone-500">
             {yellowLogs.map((line, idx) => (
               <p key={`${line}-${idx}`}>{line}</p>
             ))}
@@ -951,71 +1039,109 @@ const CreateProjectPage = () => {
 
       {/* Project Creation Form - Shown when session is active, invite ready, or solo mode */}
       {canEditForm && (soloMode || sessionState.basket) && (
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+        <form onSubmit={handleSubmit} className="space-y-5 text-sm">
           {/* Finalization Voting Card */}
           {finalizationRequest && isActive && (
-            <div className="rounded border-2 border-amber-600 bg-amber-900/20 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="font-medium text-amber-300">Finalization Vote in Progress</p>
+            <div className="rounded-lg bg-amber-950/50 p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="h-5 w-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="font-semibold text-amber-300">Finalization Vote in Progress</span>
+                </div>
                 {quorumReached && (
-                  <span className="rounded bg-green-800 px-2 py-0.5 text-[10px] text-green-200">
-                    100% Quorum Reached
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-800/60 px-3 py-1 text-xs font-medium text-green-200">
+                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    100% Quorum
                   </span>
                 )}
               </div>
               
-              <div className="mb-3 text-[10px] text-stone-400">
+              <div className="mb-4 text-sm text-stone-400">
                 <p>Proposed by: <span className="font-mono text-amber-200">{shortAddress(finalizationRequest.proposer)}</span></p>
                 <p>Time: {new Date(finalizationRequest.timestamp).toLocaleTimeString()}</p>
               </div>
 
               {/* Vote Status */}
-              <div className="mb-3 grid grid-cols-2 gap-2 text-[10px]">
-                <div className="rounded bg-black/20 p-2">
-                  <p className="text-stone-500">Host</p>
-                  <p className="font-mono text-sky-300">{shortAddress(sessionState.user1Address || "")}</p>
-                  <p className={`mt-1 font-medium ${
+              <div className="mb-4 grid grid-cols-2 gap-3">
+                <div className="rounded-lg bg-black/30 p-3">
+                  <p className="text-xs text-stone-500">Host</p>
+                  <p className="mt-1 font-mono text-sm text-sky-300">{shortAddress(sessionState.user1Address || "")}</p>
+                  <p className={`mt-2 flex items-center gap-1.5 text-sm font-medium ${
                     finalizationRequest.votes[sessionState.user1Address?.toLowerCase() || ""] === true
                       ? "text-green-400"
                       : "text-stone-500"
                   }`}>
-                    {finalizationRequest.votes[sessionState.user1Address?.toLowerCase() || ""] === true
-                      ? "✓ Accepted"
-                      : "○ Pending"}
+                    {finalizationRequest.votes[sessionState.user1Address?.toLowerCase() || ""] === true ? (
+                      <>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Accepted
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Pending
+                      </>
+                    )}
                   </p>
                 </div>
-                <div className="rounded bg-black/20 p-2">
-                  <p className="text-stone-500">Joiner</p>
-                  <p className="font-mono text-amber-300">{shortAddress(sessionState.user2Address || "")}</p>
-                  <p className={`mt-1 font-medium ${
+                <div className="rounded-lg bg-black/30 p-3">
+                  <p className="text-xs text-stone-500">Joiner</p>
+                  <p className="mt-1 font-mono text-sm text-amber-300">{shortAddress(sessionState.user2Address || "")}</p>
+                  <p className={`mt-2 flex items-center gap-1.5 text-sm font-medium ${
                     finalizationRequest.votes[sessionState.user2Address?.toLowerCase() || ""] === true
                       ? "text-green-400"
                       : "text-stone-500"
                   }`}>
-                    {finalizationRequest.votes[sessionState.user2Address?.toLowerCase() || ""] === true
-                      ? "✓ Accepted"
-                      : "○ Pending"}
+                    {finalizationRequest.votes[sessionState.user2Address?.toLowerCase() || ""] === true ? (
+                      <>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Accepted
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Pending
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
 
               {/* Action Buttons */}
               {!hasVoted && !quorumReached && (
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                   <button
                     type="button"
                     onClick={() => handleVoteFinalization(true)}
-                    className="flex-1 rounded bg-green-700 px-4 py-2 text-green-100 hover:bg-green-600"
+                    className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-green-700 px-4 py-2.5 font-medium text-green-100 transition-colors hover:bg-green-600"
                     disabled={submitting}
                   >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
                     Accept
                   </button>
                   <button
                     type="button"
                     onClick={() => handleVoteFinalization(false)}
-                    className="flex-1 rounded bg-red-800 px-4 py-2 text-red-200 hover:bg-red-700"
+                    className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-red-800 px-4 py-2.5 font-medium text-red-200 transition-colors hover:bg-red-700"
                     disabled={submitting}
                   >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                     Reject
                   </button>
                 </div>
@@ -1023,37 +1149,50 @@ const CreateProjectPage = () => {
 
               {/* Status Messages */}
               {hasVoted && !quorumReached && (
-                <p className="text-center text-[10px] text-amber-300">
+                <p className="text-center text-sm text-amber-300">
                   Waiting for other participant to vote...
                 </p>
               )}
               {quorumReached && (submitting || deploymentTriggered) && (
-                <p className="text-center text-[10px] text-green-300">
+                <div className="flex items-center justify-center gap-2 text-sm text-green-300">
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
                   Deploying to blockchain...
-                </p>
+                </div>
               )}
 
-              <p className="mt-2 text-[10px] text-stone-500">
+              <p className="mt-3 flex items-center justify-center gap-1.5 text-sm text-stone-500">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
                 Editing is locked during voting. Reject to make changes.
               </p>
             </div>
           )}
 
           {isActive && !finalizationRequest ? (
-            <p className="text-[10px] text-green-400">
+            <div className="flex items-center gap-2 text-sm text-green-400">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
               All fields below are collaboratively editable. Changes sync in real-time.
-            </p>
+            </div>
           ) : !isActive ? (
-            <p className="text-[10px] text-yellow-400">
+            <div className="flex items-center gap-2 text-sm text-yellow-400">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
               Start filling out the form. Changes will sync once the other user joins.
-            </p>
+            </div>
           ) : null}
 
           <div className={`grid gap-4 md:grid-cols-2 ${isEditingLocked ? "opacity-60" : ""}`}>
             <label className="space-y-2">
-              <span className="text-stone-300">Project name</span>
+              <span className="text-sm text-stone-300">Project name</span>
               <input
-                className="input-blocky w-full rounded px-3 py-2"
+                className="input-blocky w-full rounded-lg px-3 py-2.5"
                 value={localFormFields.projectName}
                 onChange={(e) => handleLocalFieldChange("projectName", e.target.value)}
                 onBlur={() => handleFieldBlur("projectName")}
@@ -1063,9 +1202,9 @@ const CreateProjectPage = () => {
               />
             </label>
             <label className="space-y-2">
-              <span className="text-stone-300">Withdraw address</span>
+              <span className="text-sm text-stone-300">Withdraw address</span>
               <input
-                className="input-blocky w-full rounded px-3 py-2"
+                className="input-blocky w-full rounded-lg px-3 py-2.5"
                 value={localFormFields.withdrawAddress}
                 onChange={(e) => handleLocalFieldChange("withdrawAddress", e.target.value)}
                 onBlur={() => handleFieldBlur("withdrawAddress")}
@@ -1075,9 +1214,9 @@ const CreateProjectPage = () => {
               />
             </label>
             <label className="space-y-2">
-              <span className="text-stone-300">Minimum raise (USDC)</span>
+              <span className="text-sm text-stone-300">Minimum raise (USDC)</span>
               <input
-                className="input-blocky w-full rounded px-3 py-2"
+                className="input-blocky w-full rounded-lg px-3 py-2.5"
                 value={localFormFields.minimumRaise}
                 onChange={(e) => handleLocalFieldChange("minimumRaise", e.target.value)}
                 onBlur={() => handleFieldBlur("minimumRaise")}
@@ -1087,9 +1226,9 @@ const CreateProjectPage = () => {
               />
             </label>
             <label className="space-y-2">
-              <span className="text-stone-300">Deadline</span>
+              <span className="text-sm text-stone-300">Deadline</span>
               <input
-                className="input-blocky w-full rounded px-3 py-2"
+                className="input-blocky w-full rounded-lg px-3 py-2.5"
                 type="date"
                 value={localFormFields.deadline}
                 onChange={(e) => handleLocalFieldChange("deadline", e.target.value)}
@@ -1100,9 +1239,9 @@ const CreateProjectPage = () => {
               />
             </label>
             <label className="space-y-2">
-              <span className="text-stone-300">Raise fee (%)</span>
+              <span className="text-sm text-stone-300">Raise fee (%)</span>
               <input
-                className="input-blocky w-full rounded px-3 py-2"
+                className="input-blocky w-full rounded-lg px-3 py-2.5"
                 type="number"
                 step="0.01"
                 value={localFormFields.raiseFeePct}
@@ -1114,9 +1253,9 @@ const CreateProjectPage = () => {
               />
             </label>
             <label className="space-y-2">
-              <span className="text-stone-300">Profit fee (%)</span>
+              <span className="text-sm text-stone-300">Profit fee (%)</span>
               <input
-                className="input-blocky w-full rounded px-3 py-2"
+                className="input-blocky w-full rounded-lg px-3 py-2.5"
                 type="number"
                 step="0.01"
                 value={localFormFields.profitFeePct}
@@ -1129,20 +1268,30 @@ const CreateProjectPage = () => {
             </label>
           </div>
 
-          <div className="rounded border-4 border-dirt p-3">
-            <p className="mb-3 text-stone-300">Companies & weights</p>
+          <div className="rounded-lg bg-stone-900/50 p-4">
+            <div className="mb-4 flex items-center gap-2">
+              <svg className="h-5 w-5 text-stone-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              <span className="text-base font-medium text-stone-300">Companies & weights</span>
+            </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               {/* Yellow Balance Display */}
               {(isActive || isInviteReady) && (
-                <div className="rounded border-2 border-amber-700/50 bg-amber-900/10 p-3">
+                <div className="rounded-lg bg-amber-950/40 p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] text-amber-300">Your Yellow Balance (ytest.USD)</p>
-                    <span className="font-mono text-sm text-amber-200">
-                      ${remainingBalance.toFixed(2)} available
+                    <div className="flex items-center gap-2">
+                      <svg className="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm text-amber-300">Your Yellow Balance (ytest.USD)</span>
+                    </div>
+                    <span className="font-mono text-lg font-semibold text-amber-200">
+                      ${remainingBalance.toFixed(2)}
                     </span>
                   </div>
-                  <div className="mt-1 flex gap-4 text-[10px] text-stone-400">
+                  <div className="mt-2 flex gap-4 text-sm text-stone-500">
                     <span>Total: ${yellowBalance.toFixed(2)}</span>
                     <span>Staked: ${currentUserStaked.toFixed(2)}</span>
                   </div>
@@ -1150,20 +1299,23 @@ const CreateProjectPage = () => {
               )}
 
               {/* Add new company - enabled when session is active, invite_ready, or solo mode */}
-              <div className={`rounded border-2 p-3 ${(isActive || isInviteReady || soloMode) && !isEditingLocked ? "border-green-800/50 bg-green-900/10" : "border-stone-700/50 bg-stone-900/10"} ${isEditingLocked ? "opacity-60" : ""}`}>
-                <p className={`mb-2 text-[10px] ${(isActive || isInviteReady || soloMode) && !isEditingLocked ? "text-green-300" : "text-stone-400"}`}>
+              <div className={`rounded-lg p-4 ${(isActive || isInviteReady || soloMode) && !isEditingLocked ? "bg-green-950/40" : "bg-stone-800/40"} ${isEditingLocked ? "opacity-60" : ""}`}>
+                <p className={`mb-3 flex items-center gap-2 text-sm ${(isActive || isInviteReady || soloMode) && !isEditingLocked ? "text-green-300" : "text-stone-400"}`}>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
                   Add a company {(isInviteReady || soloMode) && "(changes saved locally)"}{isEditingLocked && "(locked during voting)"}
                 </p>
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                   <input
-                    className="input-blocky flex-1 rounded px-3 py-2"
+                    className="input-blocky flex-1 rounded-lg px-3 py-2.5"
                     value={newCompanyName}
                     onChange={(e) => setNewCompanyName(e.target.value)}
                     placeholder="Company name"
                     disabled={(!isActive && !isInviteReady && !soloMode) || isEditingLocked}
                   />
                   <input
-                    className="input-blocky w-24 rounded px-3 py-2 text-center"
+                    className="input-blocky w-28 rounded-lg px-3 py-2.5 text-center"
                     type="number"
                     value={newCompanyStake}
                     onChange={(e) => setNewCompanyStake(e.target.value)}
@@ -1176,13 +1328,16 @@ const CreateProjectPage = () => {
                   <button
                     type="button"
                     onClick={handleAddCompany}
-                    className="button-blocky rounded px-4 py-2"
+                    className="button-blocky flex cursor-pointer items-center gap-2 rounded-lg px-5 py-2.5"
                     disabled={(!isActive && !isInviteReady && !soloMode) || isEditingLocked || (!soloMode && parseFloat(newCompanyStake || "0") > remainingBalance)}
                   >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
                     Add
                   </button>
                 </div>
-                <p className="mt-1 text-[10px] text-stone-500">
+                <p className="mt-2 text-sm text-stone-500">
                   {isEditingLocked ? "Editing locked during finalization vote." : soloMode ? "Enter weight amounts for each company." : isActive ? `Initial stake in ytest.USD. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : isInviteReady ? `Build your basket now. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : "Create a session first."}
                 </p>
               </div>
@@ -1205,11 +1360,14 @@ const CreateProjectPage = () => {
                       "bg-lime-500",
                     ];
                     return (
-                      <div className="mb-4">
-                        <div className="mb-2 flex items-center justify-between text-[10px]">
+                      <div className="mb-5">
+                        <div className="mb-2 flex items-center justify-between text-sm">
                           <span className="text-stone-400">Weight Distribution</span>
+                          <span className={`font-medium ${totalWeight === 100 ? "text-green-400" : "text-amber-400"}`}>
+                            {totalWeight}% / 100%
+                          </span>
                         </div>
-                        <div className="flex h-6 w-full overflow-hidden rounded-lg bg-stone-800">
+                        <div className="flex h-8 w-full overflow-hidden rounded-lg bg-stone-800">
                           {basketWeights.map((company, idx) => (
                             <div
                               key={company.name}
@@ -1218,7 +1376,7 @@ const CreateProjectPage = () => {
                               title={`${company.name}: ${company.weight}%`}
                             >
                               {company.weight >= 10 && (
-                                <span className="truncate px-1 text-[9px] font-bold text-white drop-shadow">
+                                <span className="truncate px-1 text-xs font-bold text-white drop-shadow">
                                   {company.weight}%
                                 </span>
                               )}
@@ -1229,18 +1387,18 @@ const CreateProjectPage = () => {
                               className="flex items-center justify-center bg-stone-700/50"
                               style={{ width: `${100 - totalWeight}%` }}
                             >
-                              <span className="text-[9px] text-stone-500">
+                              <span className="text-xs text-stone-500">
                                 {100 - totalWeight}%
                               </span>
                             </div>
                           )}
                         </div>
                         {/* Legend */}
-                        <div className="mt-2 flex flex-wrap gap-2">
+                        <div className="mt-3 flex flex-wrap gap-3">
                           {basketWeights.map((company, idx) => (
-                            <div key={company.name} className="flex items-center gap-1">
-                              <div className={`h-2 w-2 rounded-sm ${colors[idx % colors.length]}`} />
-                              <span className="text-[9px] text-stone-400">{company.name}</span>
+                            <div key={company.name} className="flex items-center gap-1.5">
+                              <div className={`h-2.5 w-2.5 rounded ${colors[idx % colors.length]}`} />
+                              <span className="text-xs text-stone-400">{company.name}</span>
                             </div>
                           ))}
                         </div>
@@ -1249,18 +1407,18 @@ const CreateProjectPage = () => {
                   })()}
 
                   {/* Company Cards */}
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {(() => {
                       const basketWeights = calculateWeightsFromBasket(activeBasket);
                       const colors = [
-                        { bg: "bg-amber-500", border: "border-amber-500/30", text: "text-amber-400" },
-                        { bg: "bg-emerald-500", border: "border-emerald-500/30", text: "text-emerald-400" },
-                        { bg: "bg-sky-500", border: "border-sky-500/30", text: "text-sky-400" },
-                        { bg: "bg-purple-500", border: "border-purple-500/30", text: "text-purple-400" },
-                        { bg: "bg-rose-500", border: "border-rose-500/30", text: "text-rose-400" },
-                        { bg: "bg-cyan-500", border: "border-cyan-500/30", text: "text-cyan-400" },
-                        { bg: "bg-orange-500", border: "border-orange-500/30", text: "text-orange-400" },
-                        { bg: "bg-lime-500", border: "border-lime-500/30", text: "text-lime-400" },
+                        { bg: "bg-amber-500", bgLight: "bg-amber-500/10", text: "text-amber-400" },
+                        { bg: "bg-emerald-500", bgLight: "bg-emerald-500/10", text: "text-emerald-400" },
+                        { bg: "bg-sky-500", bgLight: "bg-sky-500/10", text: "text-sky-400" },
+                        { bg: "bg-purple-500", bgLight: "bg-purple-500/10", text: "text-purple-400" },
+                        { bg: "bg-rose-500", bgLight: "bg-rose-500/10", text: "text-rose-400" },
+                        { bg: "bg-cyan-500", bgLight: "bg-cyan-500/10", text: "text-cyan-400" },
+                        { bg: "bg-orange-500", bgLight: "bg-orange-500/10", text: "text-orange-400" },
+                        { bg: "bg-lime-500", bgLight: "bg-lime-500/10", text: "text-lime-400" },
                       ];
 
                       return activeBasket.companies.map((companyName, idx) => {
@@ -1276,35 +1434,36 @@ const CreateProjectPage = () => {
                         return (
                           <div 
                             key={companyName} 
-                            className={`flex items-stretch rounded-lg border-2 ${colorSet.border} bg-black/30 overflow-hidden`}
+                            className={`flex items-stretch overflow-hidden rounded-lg ${colorSet.bgLight} transition-colors hover:bg-opacity-20`}
                           >
                             {/* Color Indicator */}
-                            <div className={`${colorSet.bg} w-2 flex-shrink-0`} />
+                            <div className={`${colorSet.bg} w-1.5 flex-shrink-0`} />
                             
                             {/* Main Content */}
                             <div className="flex flex-1 items-center p-4">
                               {/* Company Name - Left */}
                               <div className="min-w-0 w-1/3">
                                 <p className="truncate text-base font-semibold text-stone-100">{companyName}</p>
+                                <p className={`text-xs ${colorSet.text}`}>{weight}% weight</p>
                               </div>
                               
                               {/* My Stake - Center */}
                               <div className="flex-1 text-center">
-                                <p className="text-[10px] uppercase tracking-wide text-stone-500">My Stake</p>
+                                <p className="text-xs uppercase tracking-wide text-stone-500">My Stake</p>
                                 <p className="text-xl font-bold text-sky-400">${myStake}</p>
                               </div>
                               
                               {/* Total - Right */}
                               <div className="w-1/4 text-right">
-                                <p className="text-[10px] uppercase tracking-wide text-stone-500">Total</p>
+                                <p className="text-xs uppercase tracking-wide text-stone-500">Total</p>
                                 <p className="text-xl font-bold text-green-400">${totalStake.toFixed(2)}</p>
                               </div>
                             </div>
 
                             {/* Right: Top Up Controls */}
-                            <div className={`flex items-center gap-2 border-l border-stone-700/50 bg-stone-800/50 px-4 py-3 ${isEditingLocked ? "opacity-60" : ""}`}>
+                            <div className={`flex items-center gap-3 border-l border-stone-700/30 bg-black/20 px-4 py-3 ${isEditingLocked ? "opacity-60" : ""}`}>
                               <input
-                                className="input-blocky w-20 rounded px-2 py-2 text-center text-sm"
+                                className="input-blocky w-20 rounded-lg px-2 py-2 text-center text-sm"
                                 type="number"
                                 value={topUpAmounts[companyName] || ""}
                                 onChange={(e) =>
@@ -1322,10 +1481,13 @@ const CreateProjectPage = () => {
                               <button
                                 type="button"
                                 onClick={() => handleTopUp(companyName)}
-                                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50"
                                 disabled={isEditingLocked || (!soloMode && remainingBalance <= 0) || (!soloMode && parseFloat(topUpAmounts[companyName] || "0") > remainingBalance) || (!isActive && !isInviteReady && !soloMode)}
                               >
-                                + Stake
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                                </svg>
+                                Stake
                               </button>
                             </div>
                           </div>
@@ -1335,44 +1497,76 @@ const CreateProjectPage = () => {
                   </div>
                 </>
               ) : (
-                <p className="py-8 text-center text-sm text-stone-500">
-                  No companies yet. Add one above to start building the basket.
-                </p>
+                <div className="py-10 text-center">
+                  <svg className="mx-auto mb-3 h-12 w-12 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                  <p className="text-base text-stone-500">No companies yet</p>
+                  <p className="mt-1 text-sm text-stone-600">Add one above to start building the basket</p>
+                </div>
               )}
             </div>
           </div>
 
-          {message && <p className="text-[10px] text-sky-200">{message}</p>}
+          {message && (
+            <div className="flex items-center gap-2 rounded-lg bg-sky-900/30 p-3 text-sm text-sky-200">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {message}
+            </div>
+          )}
 
           {/* Solo Deploy Button - when waiting for joiner and basket is ready */}
           {isInviteReady && sessionState.basket && sessionState.basket.companies.length > 0 && (
-            <div className="rounded border-4 border-dirt p-4">
-              <p className="mb-2 text-[10px] text-stone-400">
+            <div className="rounded-lg bg-stone-800/50 p-5">
+              <p className="mb-3 text-sm text-stone-400">
                 No one joined yet? You can deploy this project on your own.
               </p>
               <button
                 type="button"
                 onClick={triggerDeployment}
-                className="button-blocky w-full rounded px-4 py-3 text-xs uppercase"
+                className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-3"
                 disabled={
                   submitting ||
                   !localFormFields.projectName ||
                   calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0) !== 100
                 }
               >
-                {submitting ? "Deploying..." : "Deploy Solo"}
+                {submitting ? (
+                  <>
+                    <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Deploying...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Deploy Solo
+                  </>
+                )}
               </button>
               {calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0) !== 100 && (
-                <p className="mt-1 text-[10px] text-amber-400">
+                <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-400">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
                   Weights must sum to 100% before deploying
                 </p>
               )}
               {!localFormFields.projectName && (
-                <p className="mt-1 text-[10px] text-amber-400">
+                <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-400">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
                   Enter a project name before deploying
                 </p>
               )}
-              <p className="mt-2 text-[10px] text-stone-500">
+              <p className="mt-3 text-sm text-stone-500">
                 Or wait for someone to join using the invite code above.
               </p>
             </div>
@@ -1380,29 +1574,50 @@ const CreateProjectPage = () => {
 
           {/* Solo Mode Deploy Button */}
           {soloMode && isIdle && soloBasket.companies.length > 0 && (
-            <div className="rounded border-4 border-purple-800/50 bg-purple-900/10 p-4">
-              <p className="mb-2 text-[10px] text-stone-400">
+            <div className="rounded-lg bg-purple-950/40 p-5">
+              <p className="mb-3 text-sm text-stone-400">
                 Deploy your project directly without a collaborative session.
               </p>
               <button
                 type="button"
                 onClick={handleSoloDeploy}
-                className="button-blocky w-full rounded px-4 py-3 text-xs uppercase"
+                className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-3"
                 disabled={
                   submitting ||
                   !localFormFields.projectName ||
                   calculateWeightsFromBasket(soloBasket).reduce((sum, c) => sum + c.weight, 0) !== 100
                 }
               >
-                {submitting ? "Deploying..." : "Deploy Project"}
+                {submitting ? (
+                  <>
+                    <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Deploying...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Deploy Project
+                  </>
+                )}
               </button>
               {calculateWeightsFromBasket(soloBasket).reduce((sum, c) => sum + c.weight, 0) !== 100 && (
-                <p className="mt-1 text-[10px] text-amber-400">
+                <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-400">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
                   Weights must sum to 100% before deploying
                 </p>
               )}
               {!localFormFields.projectName && (
-                <p className="mt-1 text-[10px] text-amber-400">
+                <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-400">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
                   Enter a project name before deploying
                 </p>
               )}
@@ -1411,29 +1626,38 @@ const CreateProjectPage = () => {
 
           {/* Propose Finalization Button - only when session active, no finalization in progress, and form is valid */}
           {isActive && !finalizationRequest && sessionState.basket && sessionState.basket.companies.length > 0 && (
-            <div className="rounded border-2 border-green-800/50 bg-green-900/10 p-4">
-              <p className="mb-2 text-[10px] text-stone-400">
+            <div className="rounded-lg bg-green-950/40 p-5">
+              <p className="mb-3 text-sm text-stone-400">
                 Ready to finalize? Both participants must agree before deploying.
               </p>
               <button
                 type="button"
                 onClick={handleProposeFinalization}
-                className="w-full rounded bg-green-700 px-4 py-3 text-sm font-medium text-green-100 hover:bg-green-600"
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-green-700 px-4 py-3 text-sm font-medium text-green-100 transition-colors hover:bg-green-600"
                 disabled={
                   submitting ||
                   !localFormFields.projectName ||
                   calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0) !== 100
                 }
               >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
                 Propose Finalization (Requires 100% Vote)
               </button>
               {calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0) !== 100 && (
-                <p className="mt-1 text-[10px] text-amber-400">
+                <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-400">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
                   Weights must sum to 100% before proposing
                 </p>
               )}
               {!localFormFields.projectName && (
-                <p className="mt-1 text-[10px] text-amber-400">
+                <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-400">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
                   Enter a project name before proposing
                 </p>
               )}
@@ -1444,22 +1668,28 @@ const CreateProjectPage = () => {
           {!isActive && !isInviteReady && !soloMode && (
             <button
               type="submit"
-              className="button-blocky rounded px-4 py-3 text-xs uppercase"
+              className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-3"
               disabled={submitting}
             >
-              {submitting ? "Deploying..." : "Create project"}
+              {submitting ? (
+                <>
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Deploying...
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create project
+                </>
+              )}
             </button>
           )}
         </form>
-      )}
-
-      {/* Message when no session is active */}
-      {!canEditForm && (
-        <div className="rounded border-4 border-dirt/50 bg-stone-900/30 p-6 text-center">
-          <p className="text-stone-400">
-            Join or create a Yellow Network session above to start building a project collaboratively.
-          </p>
-        </div>
       )}
     </div>
   );
