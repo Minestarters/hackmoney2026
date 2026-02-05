@@ -263,8 +263,8 @@ const CreateProjectPage = () => {
 
   // Collaborative basket handlers
   const handleAddCompany = async () => {
-    if (sessionState.status !== "active") {
-      setYellowError("Wait for the other user to join before adding companies");
+    if (sessionState.status !== "active" && sessionState.status !== "invite_ready") {
+      setYellowError("Create or join a session first");
       return;
     }
     if (!newCompanyName.trim()) {
@@ -277,9 +277,40 @@ const CreateProjectPage = () => {
     }
     setYellowError(null);
     try {
-      await sessionManager.addCompany(newCompanyName.trim(), newCompanyStake);
-      setNewCompanyName("");
-      setNewCompanyStake("10");
+      // If invite_ready (waiting for joiner), update basket locally
+      if (sessionState.status === "invite_ready") {
+        const currentBasket = sessionState.basket || { companies: [], stakes: {} };
+        const trimmedName = newCompanyName.trim();
+        
+        if (currentBasket.companies.includes(trimmedName)) {
+          setYellowError(`Company "${trimmedName}" already exists`);
+          return;
+        }
+        
+        const userAddr = sessionState.user1Address?.toLowerCase() || "";
+        const stakeAmount = parseFloat(newCompanyStake);
+        
+        const newBasket = {
+          ...currentBasket,
+          companies: [...currentBasket.companies, trimmedName],
+          stakes: {
+            ...currentBasket.stakes,
+            [trimmedName]: {
+              [userAddr]: stakeAmount.toFixed(2),
+            },
+          },
+        };
+        
+        // Update local state directly (will sync when joiner connects or on solo deploy)
+        setSessionState(prev => ({ ...prev, basket: newBasket }));
+        setNewCompanyName("");
+        setNewCompanyStake("10");
+      } else {
+        // Active session - sync to Yellow network
+        await sessionManager.addCompany(newCompanyName.trim(), newCompanyStake);
+        setNewCompanyName("");
+        setNewCompanyStake("10");
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to add company";
       setYellowError(msg);
@@ -287,8 +318,8 @@ const CreateProjectPage = () => {
   };
 
   const handleTopUp = async (companyName: string) => {
-    if (sessionState.status !== "active") {
-      setYellowError("Wait for the other user to join before topping up");
+    if (sessionState.status !== "active" && sessionState.status !== "invite_ready") {
+      setYellowError("Create or join a session first");
       return;
     }
     const amount = topUpAmounts[companyName];
@@ -298,8 +329,32 @@ const CreateProjectPage = () => {
     }
     setYellowError(null);
     try {
-      await sessionManager.stakeInCompany(companyName, amount);
-      setTopUpAmounts((prev) => ({ ...prev, [companyName]: "" }));
+      // If invite_ready (waiting for joiner), update basket locally
+      if (sessionState.status === "invite_ready") {
+        const currentBasket = sessionState.basket || { companies: [], stakes: {} };
+        const userAddr = sessionState.user1Address?.toLowerCase() || "";
+        const stakeAmount = parseFloat(amount);
+        const currentStake = parseFloat(currentBasket.stakes[companyName]?.[userAddr] || "0");
+        const newStake = currentStake + stakeAmount;
+        
+        const newBasket = {
+          ...currentBasket,
+          stakes: {
+            ...currentBasket.stakes,
+            [companyName]: {
+              ...currentBasket.stakes[companyName],
+              [userAddr]: newStake.toFixed(2),
+            },
+          },
+        };
+        
+        setSessionState(prev => ({ ...prev, basket: newBasket }));
+        setTopUpAmounts((prev) => ({ ...prev, [companyName]: "" }));
+      } else {
+        // Active session - sync to Yellow network
+        await sessionManager.stakeInCompany(companyName, amount);
+        setTopUpAmounts((prev) => ({ ...prev, [companyName]: "" }));
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to top up stake";
       setYellowError(msg);
@@ -963,10 +1018,10 @@ const CreateProjectPage = () => {
                 </div>
               )}
 
-              {/* Add new company - only enabled when session is active and not locked */}
-              <div className={`rounded border-2 p-3 ${isActive && !isEditingLocked ? "border-green-800/50 bg-green-900/10" : "border-stone-700/50 bg-stone-900/10"} ${isEditingLocked ? "opacity-60" : ""}`}>
-                <p className={`mb-2 text-[10px] ${isActive && !isEditingLocked ? "text-green-300" : "text-stone-400"}`}>
-                  Add a company {!isActive && "(waiting for other user)"}{isEditingLocked && "(locked during voting)"}
+              {/* Add new company - enabled when session is active or invite_ready (solo mode) */}
+              <div className={`rounded border-2 p-3 ${(isActive || isInviteReady) && !isEditingLocked ? "border-green-800/50 bg-green-900/10" : "border-stone-700/50 bg-stone-900/10"} ${isEditingLocked ? "opacity-60" : ""}`}>
+                <p className={`mb-2 text-[10px] ${(isActive || isInviteReady) && !isEditingLocked ? "text-green-300" : "text-stone-400"}`}>
+                  Add a company {isInviteReady && "(solo mode - changes saved locally)"}{isEditingLocked && "(locked during voting)"}
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -974,7 +1029,7 @@ const CreateProjectPage = () => {
                     value={newCompanyName}
                     onChange={(e) => setNewCompanyName(e.target.value)}
                     placeholder="Company name"
-                    disabled={!isActive || isEditingLocked}
+                    disabled={(!isActive && !isInviteReady) || isEditingLocked}
                   />
                   <input
                     className="input-blocky w-24 rounded px-3 py-2 text-center"
@@ -985,19 +1040,19 @@ const CreateProjectPage = () => {
                     min="0.01"
                     step="0.01"
                     max={remainingBalance.toString()}
-                    disabled={!isActive || isEditingLocked}
+                    disabled={(!isActive && !isInviteReady) || isEditingLocked}
                   />
                   <button
                     type="button"
                     onClick={handleAddCompany}
                     className="button-blocky rounded px-4 py-2"
-                    disabled={!isActive || isEditingLocked || parseFloat(newCompanyStake || "0") > remainingBalance}
+                    disabled={(!isActive && !isInviteReady) || isEditingLocked || parseFloat(newCompanyStake || "0") > remainingBalance}
                   >
                     Add
                   </button>
                 </div>
                 <p className="mt-1 text-[10px] text-stone-500">
-                  {isEditingLocked ? "Editing locked during finalization vote." : isActive ? `Initial stake in ytest.USD. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : "Share the invite code so the other user can join."}
+                  {isEditingLocked ? "Editing locked during finalization vote." : isActive ? `Initial stake in ytest.USD. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : isInviteReady ? `Build your basket now. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : "Create a session first."}
                 </p>
               </div>
 
@@ -1048,13 +1103,13 @@ const CreateProjectPage = () => {
                             min="0.01"
                             step="0.01"
                             max={remainingBalance.toString()}
-                            disabled={isEditingLocked || remainingBalance <= 0}
+                            disabled={isEditingLocked || remainingBalance <= 0 || (!isActive && !isInviteReady)}
                           />
                           <button
                             type="button"
                             onClick={() => handleTopUp(companyName)}
                             className="rounded border border-green-700 px-2 py-1 text-[10px] text-green-300 hover:bg-green-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={isEditingLocked || remainingBalance <= 0 || parseFloat(topUpAmounts[companyName] || "0") > remainingBalance}
+                            disabled={isEditingLocked || remainingBalance <= 0 || parseFloat(topUpAmounts[companyName] || "0") > remainingBalance || (!isActive && !isInviteReady)}
                           >
                             + Top Up
                           </button>
@@ -1090,6 +1145,40 @@ const CreateProjectPage = () => {
 
           {message && <p className="text-[10px] text-sky-200">{message}</p>}
 
+          {/* Solo Deploy Button - when waiting for joiner and basket is ready */}
+          {isInviteReady && sessionState.basket && sessionState.basket.companies.length > 0 && (
+            <div className="rounded border-4 border-dirt p-4">
+              <p className="mb-2 text-[10px] text-stone-400">
+                No one joined yet? You can deploy this project on your own.
+              </p>
+              <button
+                type="button"
+                onClick={triggerDeployment}
+                className="button-blocky w-full rounded px-4 py-3 text-xs uppercase"
+                disabled={
+                  submitting ||
+                  !localFormFields.projectName ||
+                  calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0) !== 100
+                }
+              >
+                {submitting ? "Deploying..." : "Deploy Solo"}
+              </button>
+              {calculateWeightsFromBasket(sessionState.basket).reduce((sum, c) => sum + c.weight, 0) !== 100 && (
+                <p className="mt-1 text-[10px] text-amber-400">
+                  Weights must sum to 100% before deploying
+                </p>
+              )}
+              {!localFormFields.projectName && (
+                <p className="mt-1 text-[10px] text-amber-400">
+                  Enter a project name before deploying
+                </p>
+              )}
+              <p className="mt-2 text-[10px] text-stone-500">
+                Or wait for someone to join using the invite code above.
+              </p>
+            </div>
+          )}
+
           {/* Propose Finalization Button - only when session active, no finalization in progress, and form is valid */}
           {isActive && !finalizationRequest && sessionState.basket && sessionState.basket.companies.length > 0 && (
             <div className="rounded border-2 border-green-800/50 bg-green-900/10 p-4">
@@ -1121,8 +1210,8 @@ const CreateProjectPage = () => {
             </div>
           )}
 
-          {/* Solo submit button - only shown when NOT in active session or before joiner connects */}
-          {!isActive && (
+          {/* Legacy submit button - hidden when we have explicit deploy options above */}
+          {!isActive && !isInviteReady && (
             <button
               type="submit"
               className="button-blocky rounded px-4 py-3 text-xs uppercase"
