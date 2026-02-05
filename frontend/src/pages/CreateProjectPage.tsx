@@ -398,9 +398,18 @@ const CreateProjectPage = () => {
   // Calculate total staked by current user across all companies
   const getTotalStakedByUser = (userAddr: string): number => {
     if (!sessionState.basket) return 0;
+    const lower = userAddr.toLowerCase();
     let total = 0;
     for (const company of sessionState.basket.companies) {
-      const userStake = parseFloat(sessionState.basket.stakes[company]?.[userAddr] || "0");
+      const stakes = sessionState.basket.stakes[company] || {};
+      const direct = stakes[userAddr] ?? stakes[lower];
+      const found =
+        direct ??
+        (() => {
+          const matchKey = Object.keys(stakes).find((key) => key.toLowerCase() === lower);
+          return matchKey ? stakes[matchKey] : "0";
+        })();
+      const userStake = parseFloat(found || "0");
       total += userStake;
     }
     return total;
@@ -523,7 +532,13 @@ const CreateProjectPage = () => {
   };
 
   const getUserStake = (companyName: string, userAddr: string): string => {
-    return sessionState.basket?.stakes[companyName]?.[userAddr] || "0";
+    const stakes = sessionState.basket?.stakes[companyName];
+    if (!stakes) return "0";
+    if (stakes[userAddr]) return stakes[userAddr];
+    const lower = userAddr.toLowerCase();
+    if (stakes[lower]) return stakes[lower];
+    const matchKey = Object.keys(stakes).find((key) => key.toLowerCase() === lower);
+    return matchKey ? stakes[matchKey] : "0";
   };
 
   const getSoloStake = (companyName: string): string => {

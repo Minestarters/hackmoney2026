@@ -810,9 +810,9 @@ export const createYellowSessionManager = (
 
   const getCurrentUserAddress = (): `0x${string}` => {
     if (state.role === "creator") {
-      return user1Addr!;
+      return user1Addr!.toLowerCase() as `0x${string}`;
     }
-    return user2Addr!;
+    return user2Addr!.toLowerCase() as `0x${string}`;
   };
 
   const submitBasketUpdate = async (newBasket: BasketState): Promise<void> => {
