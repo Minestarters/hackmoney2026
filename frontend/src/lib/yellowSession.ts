@@ -329,7 +329,7 @@ export const createYellowSessionManager = (
       // CRITICAL: Total must remain constant across all state updates (100 + 0 = 100)
       const initialAllocations = [
         { participant: user1Addr, asset: "ytest.usd", amount: "100.00" },
-        { participant: joinerAddr, asset: "ytest.usd", amount: "0.00" },
+        { participant: joinerAddress, asset: "ytest.usd", amount: "0.00" },
       ] as RPCAppSessionAllocation[];
 
       // #region agent log
