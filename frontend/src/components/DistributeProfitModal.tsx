@@ -42,17 +42,23 @@ type DistributeProfitModalProps = {
 };
 
 const getChainNameById = (chainId: string): string | null => {
-  const chain = BRIDGEKIT_SUPPORTED_CHAINS.find(c => chainId === c.chainId.toString());
+  const chain = BRIDGEKIT_SUPPORTED_CHAINS.find(
+    (c) => chainId === c.chainId.toString(),
+  );
   return chain ? chain.name : null;
 };
 
-
 const getUsdcAddressByChainId = (chainId: number): string | null => {
-  return BRIDGEKIT_SUPPORTED_CHAINS.find(chain => chainId === chain.chainId)?.usdcAddress || null;
+  return (
+    BRIDGEKIT_SUPPORTED_CHAINS.find((chain) => chainId === chain.chainId)
+      ?.usdcAddress || null
+  );
 };
 
-const getChainNameAndRPC = (chainId: number): { name: string; rpc: string } | null => {
-  const chain = BRIDGEKIT_SUPPORTED_CHAINS.find(c => c.chainId === chainId);
+const getChainNameAndRPC = (
+  chainId: number,
+): { name: string; rpc: string } | null => {
+  const chain = BRIDGEKIT_SUPPORTED_CHAINS.find((c) => c.chainId === chainId);
   if (chain) {
     return { name: chain.name, rpc: chain.rpcEndpoints[0] };
   }
@@ -75,6 +81,7 @@ const DistributeProfitModal = ({
     [chainId: string]: boolean;
   }>({});
   const [selectedChainTab, setSelectedChainTab] = useState<string | null>(null);
+  const [isAutoDistributing, setIsAutoDistributing] = useState(false);
 
   const PROFIT_FEE_BP = 500n; // 5%
 
@@ -131,7 +138,7 @@ const DistributeProfitModal = ({
       const holders = data.project.holders;
       const totalBalance = holders.reduce(
         (sum: bigint, h: any) => sum + BigInt(h.balance),
-        0n
+        0n,
       );
 
       if (totalBalance === 0n) {
@@ -144,9 +151,7 @@ const DistributeProfitModal = ({
       const netDistributableAmount = distributionAmount - feeAmount;
 
       const csvData = holders.map((holder: any) => ({
-        account: holder.id.includes("-")
-          ? holder.id.split("-")[1]
-          : holder.id,
+        account: holder.id.includes("-") ? holder.id.split("-")[1] : holder.id,
         initialDepositChain: holder.initialDepositChain,
         profitShare: (
           (BigInt(holder.balance) * netDistributableAmount) /
@@ -155,7 +160,10 @@ const DistributeProfitModal = ({
       }));
 
       // Group by chain
-      const profitTotalsByChain: Record<string, { amount: bigint; holders: HolderData[] }> = {};
+      const profitTotalsByChain: Record<
+        string,
+        { amount: bigint; holders: HolderData[] }
+      > = {};
 
       csvData.forEach((row: HolderData) => {
         const chainId = row.initialDepositChain;
@@ -168,7 +176,7 @@ const DistributeProfitModal = ({
 
       // Create breakdown
       const breakdown: ChainBreakdown[] = Object.entries(
-        profitTotalsByChain
+        profitTotalsByChain,
       ).map(([chainId, data]) => {
         const chainName = getChainNameById(chainId);
         const isSupported = chainId in DISTRIBUTOR_ADDRESSES;
@@ -186,15 +194,13 @@ const DistributeProfitModal = ({
       setSelectedChainTab(breakdown[0]?.chainId || null);
       setStep("breakdown");
 
-      toast.success(
-        `Distribution data fetched for ${breakdown.length} chains`
-      );
+      toast.success(`Distribution data fetched for ${breakdown.length} chains`);
     } catch (error) {
       console.error("Error fetching distribution data:", error);
       toast.error(
         `Failed to fetch distribution data: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     } finally {
       setIsLoading(false);
@@ -212,8 +218,8 @@ const DistributeProfitModal = ({
     setStep("bridge");
     setBridgeProgress(
       Object.fromEntries(
-        chainBreakdown.map((c) => [c.chainId, "pending" as const])
-      )
+        chainBreakdown.map((c) => [c.chainId, "pending" as const]),
+      ),
     );
 
     try {
@@ -283,6 +289,34 @@ const DistributeProfitModal = ({
 
   const handleSkipBridge = () => {
     setStep("payout");
+    setSelectedChainTab(chainBreakdown[0]?.chainId || null);
+  };
+
+  const handleDistributeToAllChains = async () => {
+    if (chainBreakdown.length === 0) return;
+
+    setIsAutoDistributing(true);
+
+    for (let i = 0; i < chainBreakdown.length; i++) {
+      const chain = chainBreakdown[i];
+
+      // Switch to the current chain tab
+      setSelectedChainTab(chain.chainId);
+
+      // Wait a bit for UI to update
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Execute payout for this chain
+      await handleBatchPayout(chain.chainId);
+
+      // Wait a bit before moving to next chain
+      if (i < chainBreakdown.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    setIsAutoDistributing(false);
+    toast.success("All chain distributions completed!");
   };
 
   const handleBatchPayout = async (chainId: string) => {
@@ -291,7 +325,9 @@ const DistributeProfitModal = ({
       return;
     }
 
-    const chainBreakdownItem = chainBreakdown.find((c) => c.chainId === chainId);
+    const chainBreakdownItem = chainBreakdown.find(
+      (c) => c.chainId === chainId,
+    );
     if (!chainBreakdownItem) return;
 
     const numericChainId = Number(chainId);
@@ -310,7 +346,7 @@ const DistributeProfitModal = ({
       // Step 1: Switch wallet to the correct chain
       toast.loading(`Switching to ${chainInfo.name}...`);
       const hexChainId = ethers.toBeHex(numericChainId);
-      
+
       try {
         await window.ethereum!.request!({
           method: "wallet_switchEthereumChain",
@@ -336,11 +372,15 @@ const DistributeProfitModal = ({
       }
 
       // Step 2: Get fresh signer after chain switch
-      const provider = new ethers.BrowserProvider(window.ethereum as any as Eip1193Provider);
+      const provider = new ethers.BrowserProvider(
+        window.ethereum as any as Eip1193Provider,
+      );
       const freshSigner = await provider.getSigner();
 
       const distributorAddress =
-        DISTRIBUTOR_ADDRESSES[numericChainId as keyof typeof DISTRIBUTOR_ADDRESSES];
+        DISTRIBUTOR_ADDRESSES[
+          numericChainId as keyof typeof DISTRIBUTOR_ADDRESSES
+        ];
       if (!distributorAddress) {
         throw new Error("Distributor address not found for this chain");
       }
@@ -354,12 +394,12 @@ const DistributeProfitModal = ({
       const distributor = new Contract(
         distributorAddress,
         minestartersDistributor,
-        freshSigner
+        freshSigner,
       );
 
       const recipients = chainBreakdownItem.holders.map((h) => h.account);
       const amounts = chainBreakdownItem.holders.map((h) =>
-        ethers.parseUnits(h.profitShare, 0)
+        ethers.parseUnits(h.profitShare, 0),
       );
 
       // Step 4: Approve USDC
@@ -375,7 +415,9 @@ const DistributeProfitModal = ({
           type: "function",
         },
         {
-          inputs: [{ internalType: "address", name: "account", type: "address" }],
+          inputs: [
+            { internalType: "address", name: "account", type: "address" },
+          ],
           name: "balanceOf",
           outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
           stateMutability: "view",
@@ -392,7 +434,7 @@ const DistributeProfitModal = ({
           type: "function",
         },
       ];
-      
+
       const usdc = new Contract(usdcAddress, usdcAbi, freshSigner);
       const userAddress = await freshSigner.getAddress();
 
@@ -404,20 +446,26 @@ const DistributeProfitModal = ({
 
       if (balance < totalAmount) {
         throw new Error(
-          `Insufficient USDC balance. Have: ${ethers.formatUnits(balance, 6)}, Need: ${ethers.formatUnits(totalAmount, 6)}`
+          `Insufficient USDC balance. Have: ${ethers.formatUnits(
+            balance,
+            6,
+          )}, Need: ${ethers.formatUnits(totalAmount, 6)}`,
         );
       }
 
       // Check current allowance
-      const currentAllowance = await usdc.allowance(userAddress, distributorAddress);
-      
+      const currentAllowance = await usdc.allowance(
+        userAddress,
+        distributorAddress,
+      );
+
       if (currentAllowance < totalAmount) {
         toast.loading("Approving USDC...");
         // Approve with some extra buffer
         const approveAmount = totalAmount + ethers.parseUnits("1", 6);
         const approveTx = await usdc.approve(distributorAddress, approveAmount);
         const approveReceipt = await approveTx.wait();
-        
+
         if (!approveReceipt) {
           throw new Error("USDC approval failed - no receipt");
         }
@@ -425,13 +473,15 @@ const DistributeProfitModal = ({
 
       // Step 5: Execute batch payout with correct USDC address
       toast.loading("Executing batch payout...");
-      const tx = await distributor.batchPayout(usdcAddress, recipients, amounts);
+      const tx = await distributor.batchPayout(
+        usdcAddress,
+        recipients,
+        amounts,
+      );
       const receipt = await tx.wait();
 
       if (receipt) {
-        toast.success(
-          `Payout completed for ${chainBreakdownItem.chainName}`
-        );
+        toast.success(`Payout completed for ${chainBreakdownItem.chainName}`);
       } else {
         throw new Error("Batch payout failed - no receipt");
       }
@@ -440,7 +490,7 @@ const DistributeProfitModal = ({
       toast.error(
         `Payout failed: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     } finally {
       setPayoutProgress((prev) => ({
@@ -452,9 +502,13 @@ const DistributeProfitModal = ({
 
   if (!isOpen) return null;
 
-  const isChainSupported = (chainId: number | string) => DISTRIBUTOR_ADDRESSES[chainId as keyof typeof DISTRIBUTOR_ADDRESSES] !== undefined;
+  const isChainSupported = (chainId: number | string) =>
+    DISTRIBUTOR_ADDRESSES[chainId as keyof typeof DISTRIBUTOR_ADDRESSES] !==
+    undefined;
 
-  const allChainsSupported = chainBreakdown.every((c) => isChainSupported(c.chainId));
+  const allChainsSupported = chainBreakdown.every((c) =>
+    isChainSupported(c.chainId),
+  );
 
   return (
     <div
@@ -473,7 +527,15 @@ const DistributeProfitModal = ({
               Distribute Profit
             </h2>
             <p className="mt-1 text-[10px] text-stone">
-              Step {step === "amount" ? "1" : step === "breakdown" ? "2" : step === "bridge" ? "3" : "4"} of 4
+              Step{" "}
+              {step === "amount"
+                ? "1"
+                : step === "breakdown"
+                ? "2"
+                : step === "bridge"
+                ? "3"
+                : "4"}{" "}
+              of 4
             </p>
           </div>
           <button
@@ -521,7 +583,9 @@ const DistributeProfitModal = ({
                 />
               </div>
               <div className="rounded border-2 border-dirt bg-night/80 px-3 py-2 text-[10px] text-stone-400">
-                <p>💡 A 5% fee will be deducted from the distribution amount.</p>
+                <p>
+                  💡 A 5% fee will be deducted from the distribution amount.
+                </p>
               </div>
             </div>
           )}
@@ -548,7 +612,8 @@ const DistributeProfitModal = ({
                             {chain.chainName}
                           </p>
                           <p className="text-[10px] text-stone-400">
-                            {chain.holders.length} holder{chain.holders.length !== 1 ? "s" : ""}
+                            {chain.holders.length} holder
+                            {chain.holders.length !== 1 ? "s" : ""}
                           </p>
                         </div>
                       </div>
@@ -569,8 +634,12 @@ const DistributeProfitModal = ({
 
               {!allChainsSupported && (
                 <div className="rounded border-2 border-red-700 bg-red-950/30 px-3 py-2 text-[10px] text-red-300">
-                  <p className="font-semibold">⚠️ Some chains are not supported</p>
-                  <p>Bridge and payout will be disabled until this is resolved.</p>
+                  <p className="font-semibold">
+                    ⚠️ Some chains are not supported
+                  </p>
+                  <p>
+                    Bridge and payout will be disabled until this is resolved.
+                  </p>
                 </div>
               )}
             </div>
@@ -606,7 +675,9 @@ const DistributeProfitModal = ({
                         </div>
                         <div className="text-right">
                           {status === "pending" && (
-                            <p className="text-[10px] text-stone-300">Pending</p>
+                            <p className="text-[10px] text-stone-300">
+                              Pending
+                            </p>
                           )}
                           {status === "bridging" && (
                             <div className="flex items-center gap-1">
@@ -638,11 +709,31 @@ const DistributeProfitModal = ({
           {/* Step 4: Payout */}
           {step === "payout" && (
             <div className="space-y-4">
+              <div className="mb-4 rounded border-2 border-sky-800/50 bg-sky-900/20 px-3 py-2">
+                <button
+                  onClick={handleDistributeToAllChains}
+                  disabled={
+                    isAutoDistributing ||
+                    Object.values(payoutProgress).some((v) => v)
+                  }
+                  className="button-blocky w-full rounded px-4 py-2.5 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isAutoDistributing
+                    ? "Auto-Distributing..."
+                    : "🚀 Distribute to All Chains"}
+                </button>
+                <p className="mt-2 text-center text-[9px] text-stone-400">
+                  {isAutoDistributing
+                    ? "Processing all chains automatically..."
+                    : "This will automatically process payouts for all chains sequentially"}
+                </p>
+              </div>
+
               <div>
                 <p className="mb-3 text-[11px] font-semibold text-stone">
                   Distribution by Chain
                 </p>
-                
+
                 {/* Chain Tabs */}
                 <div className="mb-4 flex gap-2 overflow-x-auto pb-2">
                   {chainBreakdown.map((chain) => (
@@ -704,7 +795,10 @@ const DistributeProfitModal = ({
                           {/* Payout Button */}
                           <button
                             onClick={() => handleBatchPayout(chain.chainId)}
-                            disabled={payoutProgress[chain.chainId]}
+                            disabled={
+                              payoutProgress[chain.chainId] ||
+                              isAutoDistributing
+                            }
                             className="button-blocky w-full rounded px-4 py-2.5 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {payoutProgress[chain.chainId]
@@ -723,13 +817,25 @@ const DistributeProfitModal = ({
         {/* Footer */}
         <div className="border-t-4 border-dirt bg-night/60 px-6 py-4">
           <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="flex-1 rounded border-3 border-stone bg-night/80 px-4 py-2.5 text-[11px] font-bold uppercase text-stone transition-colors hover:bg-night"
-              disabled={isLoading}
-            >
-              {step === "payout" ? "Done" : "Cancel"}
-            </button>
+            {step !== "breakdown" && (
+              <button
+                onClick={onClose}
+                className="flex-1 rounded border-3 border-stone bg-night/80 px-4 py-2.5 text-[11px] font-bold uppercase text-stone transition-colors hover:bg-night"
+                disabled={isLoading}
+              >
+                {step === "payout" ? "Done" : "Cancel"}
+              </button>
+            )}
+
+            {step === "breakdown" && (
+              <button
+                onClick={handleSkipBridge}
+                disabled={!allChainsSupported}
+                className="flex-1 rounded border-3 border-stone bg-night/80 px-4 py-2.5 text-[11px] font-bold uppercase text-stone transition-colors hover:bg-night disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Skip
+              </button>
+            )}
 
             {step === "amount" && (
               <button
@@ -748,16 +854,6 @@ const DistributeProfitModal = ({
                 className="button-blocky flex-1 rounded px-4 py-2.5 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Bridge Balances
-              </button>
-            )}
-
-            {step === "breakdown" && (
-              <button
-                onClick={handleSkipBridge}
-                disabled={!allChainsSupported}
-                className="button-blocky flex-1 rounded px-4 py-2.5 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Skip
               </button>
             )}
           </div>
