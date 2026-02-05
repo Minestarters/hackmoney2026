@@ -106,9 +106,16 @@ const CreateProjectPage = () => {
     setYellowLogs((prev) => [...prev, line].slice(-100));
   }, []);
 
+  // Get the connected account for Yellow session
+  const getAccount = useCallback(() => {
+    if (!account) return null;
+    // Return a JSON-RPC account that signs via the connected wallet
+    return { address: account, type: "json-rpc" } as const;
+  }, [account]);
+
   const sessionManager = useMemo(
-    () => createYellowSessionManager(setSessionState, appendLog),
-    [appendLog]
+    () => createYellowSessionManager(setSessionState, getAccount, appendLog),
+    [getAccount, appendLog]
   );
 
   // Sync local form fields from session state when it changes (incoming updates)

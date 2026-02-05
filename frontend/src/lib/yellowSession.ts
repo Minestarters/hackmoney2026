@@ -21,7 +21,7 @@ import {
   type RPCResponse,
 } from "@erc7824/nitrolite";
 import { Client } from "yellow-ts";
-import { createWalletClient, http, type WalletClient, type Account } from "viem";
+import { createWalletClient, custom, http, type WalletClient, type Account } from "viem";
 import { generatePrivateKey, privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import {
@@ -216,8 +216,8 @@ const authenticateWallet = async (
 // ============================================================================
 
 export const createYellowSessionManager = (
-  account: Account,
   onStateChange: (state: YellowSessionState) => void,
+  getAccount: () => Account | null,
   logger?: Logger
 ): YellowSessionManager => {
   let state: YellowSessionState = { status: "idle" };
@@ -250,6 +250,10 @@ export const createYellowSessionManager = (
   
   // Creator creates session and invite using predefined User 2 address
   const createSession = async (): Promise<string> => {
+    const account = getAccount();
+    if (!account) {
+      throw new Error("No wallet connected. Please connect your wallet first.");
+    }
     if (!YELLOW_WALLET_2_SEED_PHRASE) {
       throw new Error("Missing VITE_WALLET_2_SEED_PHRASE");
     }
@@ -259,11 +263,14 @@ export const createYellowSessionManager = (
     try {
       const client = await connectToYellow();
 
-      // Use the connected wallet account
+      // Use the connected wallet account with browser wallet transport for signing
+      if (typeof window === "undefined" || !window.ethereum) {
+        throw new Error("No wallet provider found. Please install MetaMask or another wallet.");
+      }
       const walletClient = createWalletClient({
         account,
         chain: baseSepolia,
-        transport: http(),
+        transport: custom(window.ethereum as Parameters<typeof custom>[0]),
       });
 
       // Derive User 2's address from seed phrase
@@ -934,10 +941,14 @@ export const runYellowMultiPartySession = async (
   await yellow.connect();
   logLine(options.onLog, "Connected to Yellow clearnet.");
 
+  // Use browser wallet transport for the connected account
+  if (typeof window === "undefined" || !window.ethereum) {
+    throw new Error("No wallet provider found. Please install MetaMask or another wallet.");
+  }
   const walletClient = createWalletClient({
     account: options.account,
     chain: baseSepolia,
-    transport: http(),
+    transport: custom(window.ethereum as Parameters<typeof custom>[0]),
   });
 
   const wallet2Client = createWalletClient({
