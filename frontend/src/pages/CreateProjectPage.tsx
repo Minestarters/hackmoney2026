@@ -733,12 +733,12 @@ const CreateProjectPage = () => {
             </p>
             <div className="grid gap-4 md:grid-cols-2">
               {/* Creator Flow */}
-              <div className="rounded border-2 border-sky-800/50 bg-sky-900/10 p-3">
+              <div className="flex flex-col rounded border-2 border-sky-800/50 bg-sky-900/10 p-3">
                 <p className="mb-2 font-medium text-sky-300">Host (User 1)</p>
                 <p className="mb-3 text-[10px] text-stone-400">
                   Enter your collaborator's wallet address, then create a session.
                 </p>
-                <div className="space-y-2">
+                <div className="mt-auto space-y-2">
                   <input
                     type="text"
                     value={joinerAddressInput}
@@ -758,12 +758,12 @@ const CreateProjectPage = () => {
               </div>
 
               {/* Joiner Flow */}
-              <div className="rounded border-2 border-amber-800/50 bg-amber-900/10 p-3">
+              <div className="flex flex-col rounded border-2 border-amber-800/50 bg-amber-900/10 p-3">
                 <p className="mb-2 font-medium text-amber-300">Join (User 2)</p>
                 <p className="mb-3 text-[10px] text-stone-400">
                   Paste the invite code from the host.
                 </p>
-                <div className="space-y-2">
+                <div className="mt-auto space-y-2">
                   <textarea
                     value={inviteCode}
                     onChange={(e) => setInviteCode(e.target.value)}
@@ -1189,94 +1189,155 @@ const CreateProjectPage = () => {
 
               {/* List of companies with stakes */}
               {activeBasket && activeBasket.companies.length > 0 ? (
-                <div className="space-y-2">
-                  {activeBasket.companies.map((companyName) => {
-                    const user1Stake = soloMode ? getSoloStake(companyName) : getUserStake(companyName, sessionState.user1Address || "");
-                    const user2Stake = soloMode ? "0" : getUserStake(companyName, sessionState.user2Address || "");
-                    const totalStake = soloMode ? parseFloat(getSoloStake(companyName)) : getCompanyTotalStake(companyName);
+                <>
+                  {/* Weight Distribution Progress Bar */}
+                  {(() => {
                     const basketWeights = calculateWeightsFromBasket(activeBasket);
-                    const weight = basketWeights.find(w => w.name === companyName)?.weight || 0;
-
+                    const totalWeight = basketWeights.reduce((sum, c) => sum + c.weight, 0);
+                    const colors = [
+                      "bg-amber-500",
+                      "bg-emerald-500",
+                      "bg-sky-500",
+                      "bg-purple-500",
+                      "bg-rose-500",
+                      "bg-cyan-500",
+                      "bg-orange-500",
+                      "bg-lime-500",
+                    ];
                     return (
-                      <div key={companyName} className="rounded border border-dirt bg-black/20 p-3">
-                        <div className="mb-2 flex items-center justify-between">
-                          <p className="font-medium text-stone-200">{companyName}</p>
-                          <span className="rounded bg-sky-900/50 px-2 py-0.5 text-[10px] text-sky-300">
-                            {weight}% weight
-                          </span>
+                      <div className="mb-4">
+                        <div className="mb-2 flex items-center justify-between text-[10px]">
+                          <span className="text-stone-400">Weight Distribution</span>
                         </div>
-                        {soloMode ? (
-                          <div className="mb-2 text-[10px]">
-                            <p className="text-stone-500">Your stake</p>
-                            <p className="text-green-300">${user1Stake}</p>
-                          </div>
-                        ) : (
-                          <div className="mb-2 grid grid-cols-3 gap-2 text-[10px]">
-                            <div>
-                              <p className="text-stone-500">Host stake</p>
-                              <p className="text-sky-300">${user1Stake}</p>
+                        <div className="flex h-6 w-full overflow-hidden rounded-lg bg-stone-800">
+                          {basketWeights.map((company, idx) => (
+                            <div
+                              key={company.name}
+                              className={`${colors[idx % colors.length]} flex items-center justify-center transition-all duration-300`}
+                              style={{ width: `${company.weight}%` }}
+                              title={`${company.name}: ${company.weight}%`}
+                            >
+                              {company.weight >= 10 && (
+                                <span className="truncate px-1 text-[9px] font-bold text-white drop-shadow">
+                                  {company.weight}%
+                                </span>
+                              )}
                             </div>
-                            <div>
-                              <p className="text-stone-500">Joiner stake</p>
-                              <p className="text-amber-300">${user2Stake}</p>
+                          ))}
+                          {totalWeight < 100 && (
+                            <div
+                              className="flex items-center justify-center bg-stone-700/50"
+                              style={{ width: `${100 - totalWeight}%` }}
+                            >
+                              <span className="text-[9px] text-stone-500">
+                                {100 - totalWeight}%
+                              </span>
                             </div>
-                            <div>
-                              <p className="text-stone-500">Total</p>
-                              <p className="text-green-300">${totalStake.toFixed(2)}</p>
-                            </div>
-                          </div>
-                        )}
-                        <div className={`flex items-center gap-2 ${isEditingLocked ? "opacity-60" : ""}`}>
-                          <input
-                            className="input-blocky w-20 rounded px-2 py-1 text-center text-[10px]"
-                            type="number"
-                            value={topUpAmounts[companyName] || ""}
-                            onChange={(e) =>
-                              setTopUpAmounts((prev) => ({
-                                ...prev,
-                                [companyName]: e.target.value,
-                              }))
-                            }
-                            placeholder="Amount"
-                            min="0.01"
-                            step="0.01"
-                            max={soloMode ? undefined : remainingBalance.toString()}
-                            disabled={isEditingLocked || (!soloMode && remainingBalance <= 0) || (!isActive && !isInviteReady && !soloMode)}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleTopUp(companyName)}
-                            className="rounded border border-green-700 px-2 py-1 text-[10px] text-green-300 hover:bg-green-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={isEditingLocked || (!soloMode && remainingBalance <= 0) || (!soloMode && parseFloat(topUpAmounts[companyName] || "0") > remainingBalance) || (!isActive && !isInviteReady && !soloMode)}
-                          >
-                            + Top Up
-                          </button>
-                          {remainingBalance <= 0 && !isEditingLocked && (
-                            <span className="text-[9px] text-red-400">No balance</span>
                           )}
+                        </div>
+                        {/* Legend */}
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {basketWeights.map((company, idx) => (
+                            <div key={company.name} className="flex items-center gap-1">
+                              <div className={`h-2 w-2 rounded-sm ${colors[idx % colors.length]}`} />
+                              <span className="text-[9px] text-stone-400">{company.name}</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                  })()}
+
+                  {/* Company Cards */}
+                  <div className="space-y-2">
+                    {(() => {
+                      const basketWeights = calculateWeightsFromBasket(activeBasket);
+                      const colors = [
+                        { bg: "bg-amber-500", border: "border-amber-500/30", text: "text-amber-400" },
+                        { bg: "bg-emerald-500", border: "border-emerald-500/30", text: "text-emerald-400" },
+                        { bg: "bg-sky-500", border: "border-sky-500/30", text: "text-sky-400" },
+                        { bg: "bg-purple-500", border: "border-purple-500/30", text: "text-purple-400" },
+                        { bg: "bg-rose-500", border: "border-rose-500/30", text: "text-rose-400" },
+                        { bg: "bg-cyan-500", border: "border-cyan-500/30", text: "text-cyan-400" },
+                        { bg: "bg-orange-500", border: "border-orange-500/30", text: "text-orange-400" },
+                        { bg: "bg-lime-500", border: "border-lime-500/30", text: "text-lime-400" },
+                      ];
+
+                      return activeBasket.companies.map((companyName, idx) => {
+                        const myStake = soloMode 
+                          ? getSoloStake(companyName) 
+                          : getUserStake(companyName, currentUserAddress || "");
+                        const totalStake = soloMode 
+                          ? parseFloat(getSoloStake(companyName)) 
+                          : getCompanyTotalStake(companyName);
+                        const weight = basketWeights.find(w => w.name === companyName)?.weight || 0;
+                        const colorSet = colors[idx % colors.length];
+
+                        return (
+                          <div 
+                            key={companyName} 
+                            className={`flex items-stretch rounded-lg border-2 ${colorSet.border} bg-black/30 overflow-hidden`}
+                          >
+                            {/* Color Indicator */}
+                            <div className={`${colorSet.bg} w-2 flex-shrink-0`} />
+                            
+                            {/* Main Content */}
+                            <div className="flex flex-1 items-center p-4">
+                              {/* Company Name - Left */}
+                              <div className="min-w-0 w-1/3">
+                                <p className="truncate text-base font-semibold text-stone-100">{companyName}</p>
+                              </div>
+                              
+                              {/* My Stake - Center */}
+                              <div className="flex-1 text-center">
+                                <p className="text-[10px] uppercase tracking-wide text-stone-500">My Stake</p>
+                                <p className="text-xl font-bold text-sky-400">${myStake}</p>
+                              </div>
+                              
+                              {/* Total - Right */}
+                              <div className="w-1/4 text-right">
+                                <p className="text-[10px] uppercase tracking-wide text-stone-500">Total</p>
+                                <p className="text-xl font-bold text-green-400">${totalStake.toFixed(2)}</p>
+                              </div>
+                            </div>
+
+                            {/* Right: Top Up Controls */}
+                            <div className={`flex items-center gap-2 border-l border-stone-700/50 bg-stone-800/50 px-4 py-3 ${isEditingLocked ? "opacity-60" : ""}`}>
+                              <input
+                                className="input-blocky w-20 rounded px-2 py-2 text-center text-sm"
+                                type="number"
+                                value={topUpAmounts[companyName] || ""}
+                                onChange={(e) =>
+                                  setTopUpAmounts((prev) => ({
+                                    ...prev,
+                                    [companyName]: e.target.value,
+                                  }))
+                                }
+                                placeholder="$0"
+                                min="0.01"
+                                step="0.01"
+                                max={soloMode ? undefined : remainingBalance.toString()}
+                                disabled={isEditingLocked || (!soloMode && remainingBalance <= 0) || (!isActive && !isInviteReady && !soloMode)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleTopUp(companyName)}
+                                className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={isEditingLocked || (!soloMode && remainingBalance <= 0) || (!soloMode && parseFloat(topUpAmounts[companyName] || "0") > remainingBalance) || (!isActive && !isInviteReady && !soloMode)}
+                              >
+                                + Stake
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </>
               ) : (
-                <p className="py-4 text-center text-[10px] text-stone-500">
+                <p className="py-8 text-center text-sm text-stone-500">
                   No companies yet. Add one above to start building the basket.
                 </p>
-              )}
-
-              {/* Summary */}
-              {activeBasket && activeBasket.companies.length > 0 && (
-                <div className="rounded bg-stone-800/50 p-2 text-[10px]">
-                  <p className="text-stone-400">
-                    Total weight:{" "}
-                    <span className="text-stone-200">
-                      {calculateWeightsFromBasket(activeBasket).reduce((sum, c) => sum + c.weight, 0)}%
-                    </span>
-                    {" | "}
-                    Companies: <span className="text-stone-200">{activeBasket.companies.length}</span>
-                  </p>
-                </div>
               )}
             </div>
           </div>
