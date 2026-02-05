@@ -65,16 +65,6 @@ const shortAddress = (addr: string) =>
 const CreateProjectPage = () => {
   const { address: account, isConnected } = useConnection();
   const { mutate } = useConnect();
-  const [projectName, setProjectName] = useState("");
-  const [minimumRaise, setMinimumRaise] = useState("1000");
-  const [deadline, setDeadline] = useState(() => toDateInputValue(addDays(new Date(), 30)));
-  const [raiseFeePct, setRaiseFeePct] = useState("0.05");
-  const [profitFeePct, setProfitFeePct] = useState("0.01");
-  const [withdrawAddress, setWithdrawAddress] = useState("");
-  const [companies, setCompanies] = useState<CompanyInput[]>([
-    { name: "Company A", weight: 50 },
-    { name: "Company B", weight: 50 },
-  ]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -321,6 +311,22 @@ const CreateProjectPage = () => {
     return Object.values(stakes).reduce((sum, amt) => sum + parseFloat(amt || "0"), 0);
   };
 
+  // Calculate total staked by current user across all companies
+  const getTotalStakedByUser = (userAddr: string): number => {
+    if (!sessionState.basket) return 0;
+    let total = 0;
+    for (const company of sessionState.basket.companies) {
+      const userStake = parseFloat(sessionState.basket.stakes[company]?.[userAddr] || "0");
+      total += userStake;
+    }
+    return total;
+  };
+
+  // Get the current user's Yellow balance (from faucet)
+  const yellowBalance = parseFloat(sessionState.yellowBalance || "100");
+  const currentUserStaked = currentUserAddress ? getTotalStakedByUser(currentUserAddress) : 0;
+  const remainingBalance = yellowBalance - currentUserStaked;
+
   // Finalization handlers
   const handleProposeFinalization = async () => {
     setYellowError(null);
@@ -482,8 +488,8 @@ const CreateProjectPage = () => {
 
     try {
       setSubmitting(true);
-      const minRaise = parseUnits(minimumRaise || "0", 6);
-      const deadlineTs = dateInputValueToUnixSeconds(deadline);
+      const minRaise = parseUnits(localFormFields.minimumRaise || "0", 6);
+      const deadlineTs = dateInputValueToUnixSeconds(localFormFields.deadline);
       if (!Number.isFinite(deadlineTs)) {
         setMessage("Select a valid deadline");
         setSubmitting(false);
@@ -499,12 +505,12 @@ const CreateProjectPage = () => {
       }
 
       const hash = await writeFactory.createProject(walletClient, {
-        projectName,
-        companyNames: companies.map((c) => c.name),
-        companyWeights: companies.map((c) => BigInt(c.weight)),
+        projectName: localFormFields.projectName,
+        companyNames: companiesForSubmit.map((c) => c.name),
+        companyWeights: companiesForSubmit.map((c) => BigInt(c.weight)),
         minimumRaise: minRaise,
         deadline: BigInt(deadlineTs),
-        withdrawAddress: withdrawAddress as `0x${string}`,
+        withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
         profitFeeBps: BigInt(profitFeeBps),
       });
@@ -534,7 +540,6 @@ const CreateProjectPage = () => {
       {/* Yellow Session UI */}
       <div className="mb-6 rounded border-4 border-dirt p-4 text-xs">
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-medium text-stone-200">Yellow Network Session</p>
           {!isIdle && (
             <span
               className={`rounded px-2 py-0.5 text-[10px] uppercase ${
@@ -942,6 +947,22 @@ const CreateProjectPage = () => {
             <p className="mb-3 text-stone-300">Companies & weights</p>
 
             <div className="space-y-3">
+              {/* Yellow Balance Display */}
+              {(isActive || isInviteReady) && (
+                <div className="rounded border-2 border-amber-700/50 bg-amber-900/10 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-amber-300">Your Yellow Balance (ytest.USD)</p>
+                    <span className="font-mono text-sm text-amber-200">
+                      ${remainingBalance.toFixed(2)} available
+                    </span>
+                  </div>
+                  <div className="mt-1 flex gap-4 text-[10px] text-stone-400">
+                    <span>Total: ${yellowBalance.toFixed(2)}</span>
+                    <span>Staked: ${currentUserStaked.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+
               {/* Add new company - only enabled when session is active and not locked */}
               <div className={`rounded border-2 p-3 ${isActive && !isEditingLocked ? "border-green-800/50 bg-green-900/10" : "border-stone-700/50 bg-stone-900/10"} ${isEditingLocked ? "opacity-60" : ""}`}>
                 <p className={`mb-2 text-[10px] ${isActive && !isEditingLocked ? "text-green-300" : "text-stone-400"}`}>
@@ -963,19 +984,20 @@ const CreateProjectPage = () => {
                     placeholder="Stake"
                     min="0.01"
                     step="0.01"
+                    max={remainingBalance.toString()}
                     disabled={!isActive || isEditingLocked}
                   />
                   <button
                     type="button"
                     onClick={handleAddCompany}
                     className="button-blocky rounded px-4 py-2"
-                    disabled={!isActive || isEditingLocked}
+                    disabled={!isActive || isEditingLocked || parseFloat(newCompanyStake || "0") > remainingBalance}
                   >
                     Add
                   </button>
                 </div>
                 <p className="mt-1 text-[10px] text-stone-500">
-                  {isEditingLocked ? "Editing locked during finalization vote." : isActive ? "Initial stake in USDC. Others can see and top up." : "Share the invite code so the other user can join."}
+                  {isEditingLocked ? "Editing locked during finalization vote." : isActive ? `Initial stake in ytest.USD. ${remainingBalance > 0 ? `You can stake up to $${remainingBalance.toFixed(2)}` : "No balance remaining"}` : "Share the invite code so the other user can join."}
                 </p>
               </div>
 
@@ -1025,16 +1047,20 @@ const CreateProjectPage = () => {
                             placeholder="Amount"
                             min="0.01"
                             step="0.01"
-                            disabled={isEditingLocked}
+                            max={remainingBalance.toString()}
+                            disabled={isEditingLocked || remainingBalance <= 0}
                           />
                           <button
                             type="button"
                             onClick={() => handleTopUp(companyName)}
                             className="rounded border border-green-700 px-2 py-1 text-[10px] text-green-300 hover:bg-green-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={isEditingLocked}
+                            disabled={isEditingLocked || remainingBalance <= 0 || parseFloat(topUpAmounts[companyName] || "0") > remainingBalance}
                           >
                             + Top Up
                           </button>
+                          {remainingBalance <= 0 && !isEditingLocked && (
+                            <span className="text-[9px] text-red-400">No balance</span>
+                          )}
                         </div>
                       </div>
                     );
