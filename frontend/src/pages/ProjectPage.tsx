@@ -591,24 +591,21 @@ const ProjectPage = () => {
               }
             />
             <MetricCard
+              label="Creator Fees Paid"
+              icon={IconFee}
+              value={
+                <span className="pt-0.5 text-[12px] text-stone-300">
+                  {formatUsdc(creatorFeesPaid)} USDC
+                </span>
+              }
+            />
+            <MetricCard
               label="Supporters"
               icon={IconUsers}
               value={
                 <span className="break-words">
                   {supportCount === null ? "—" : supportCount.toLocaleString()}{" "}
                   <span className="text-[11px] text-stone-300">wallets</span>
-                </span>
-              }
-            />
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <MetricCard
-              label="Creator Fees Paid"
-              icon={IconFee}
-              value={
-                <span className="pt-0.5 text-[12px] text-stone-300">
-                  {formatUsdc(creatorFeesPaid)} USDC
                 </span>
               }
             />
