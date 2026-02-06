@@ -350,15 +350,6 @@ const CreateProjectPage = () => {
     }
   };
 
-  const handleCloseSession = async () => {
-    try {
-      await sessionManager.closeSession();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to close session";
-      setYellowError(msg);
-    }
-  };
-
   const handleDisconnect = () => {
     clearJoinerPoll();
     clearInvitePoll();
@@ -717,7 +708,6 @@ const CreateProjectPage = () => {
         deadline: BigInt(deadlineTs),
         withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
-        profitFeeBps: BigInt(profitFeeBps),
       });
 
       await publicClient.waitForTransactionReceipt({ hash });
@@ -807,7 +797,6 @@ const CreateProjectPage = () => {
         deadline: BigInt(deadlineTs),
         withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
-        profitFeeBps: BigInt(profitFeeBps),
       });
 
       await publicClient.waitForTransactionReceipt({ hash });
@@ -892,7 +881,6 @@ const CreateProjectPage = () => {
         deadline: BigInt(deadlineTs),
         withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
-        profitFeeBps: BigInt(profitFeeBps),
       });
 
       await publicClient.waitForTransactionReceipt({ hash });

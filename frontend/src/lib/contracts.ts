@@ -81,7 +81,6 @@ export const writeFactory = {
       deadline: bigint;
       withdrawAddress: `0x${string}`;
       raiseFeeBps: bigint;
-      profitFeeBps: bigint;
     },
   ) => {
     return walletClient.writeContract({
@@ -96,7 +95,6 @@ export const writeFactory = {
         args.deadline,
         args.withdrawAddress,
         args.raiseFeeBps,
-        args.profitFeeBps,
       ],
     });
   },
@@ -282,7 +280,7 @@ export const fetchProjectInfo = async (
 
   let accruedRaiseFees: bigint = 0n;
   try {
-    accruedRaiseFees = await vault.read.accruedRaiseFees();
+    accruedRaiseFees = (await vault.read.accruedRaiseFees()) as bigint;
   } catch {
     // older ABI; fall back to zero if method not present
   }
@@ -290,7 +288,7 @@ export const fetchProjectInfo = async (
   let withdrawnTotal = 0n;
   let hasWithdrawnValue = false;
   try {
-    const withdrawnResult = await vault.read.withdrawnPrincipal();
+    const withdrawnResult = (await vault.read.withdrawnPrincipal()) as bigint;
     if (withdrawnResult != null) {
       withdrawnTotal = withdrawnResult;
       hasWithdrawnValue = true;
@@ -302,7 +300,10 @@ export const fetchProjectInfo = async (
   let withdrawable = 0n;
   let withdrawableFees = accruedRaiseFees;
   try {
-    const [principal, fees] = await vault.read.withdrawableFunds();
+    const [principal, fees] = (await vault.read.withdrawableFunds()) as [
+      bigint,
+      bigint,
+    ];
     withdrawable = principal;
     withdrawableFees = fees;
   } catch {
@@ -414,13 +415,13 @@ export const fetchProjectAddresses = async (): Promise<`0x${string}`[]> => {
 
   const factory = getFactoryRead();
   try {
-    const addresses = await factory.read.getAllProjects();
+    const addresses = (await factory.read.getAllProjects()) as `0x${string}`[];
     return [...addresses];
   } catch {
-    const count = await factory.read.getProjectCount();
+    const count = (await factory.read.getProjectCount()) as bigint;
     const addresses: `0x${string}`[] = [];
     for (let i = 0n; i < count; i++) {
-      const addr = await factory.read.getProjectAt([i]);
+      const addr = (await factory.read.getProjectAt([i])) as `0x${string}`;
       addresses.push(addr);
     }
     return addresses;

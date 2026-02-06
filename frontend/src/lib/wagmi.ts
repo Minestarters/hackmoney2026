@@ -1,7 +1,7 @@
 import { http, createConfig } from "wagmi";
 import { localhost, arcTestnet } from "wagmi/chains";
 import { injected } from "wagmi/connectors";
-import { createPublicClient, createWalletClient, custom } from "viem";
+import { createPublicClient, createWalletClient, custom, defineChain } from "viem";
 import type { Account, Chain, Transport, WalletClient } from "viem";
 import { RPC_URL } from "../config";
 
@@ -24,9 +24,32 @@ export const wagmiConfig = createConfig({
 
 // Public client for read-only operations (no wallet needed)
 export const publicClient = createPublicClient({
-  chain,
   transport: http(RPC_URL),
 });
+
+let cachedRpcChain: Chain | null = null;
+export const getRpcChain = async (): Promise<Chain> => {
+  if (cachedRpcChain) return cachedRpcChain;
+  const chainId = await publicClient.getChainId();
+  if (chainId === localhost.id) {
+    cachedRpcChain = localhost;
+    return cachedRpcChain;
+  }
+  if (chainId === arcTestnet.id) {
+    cachedRpcChain = arcTestnet;
+    return cachedRpcChain;
+  }
+  cachedRpcChain = defineChain({
+    id: chainId,
+    name: `Chain ${chainId}`,
+    nativeCurrency: { name: "Native", symbol: "NATIVE", decimals: 18 },
+    rpcUrls: {
+      default: { http: [RPC_URL] },
+      public: { http: [RPC_URL] },
+    },
+  });
+  return cachedRpcChain;
+};
 
 // Type for wallet client with account (required for writes)
 export type WalletClientWithAccount = WalletClient<Transport, Chain, Account>;
@@ -43,9 +66,11 @@ export const getWalletClient = async (): Promise<WalletClientWithAccount | null>
     const address = accounts?.[0];
     if (!address) return null;
 
+
+    const rpcChain = await getRpcChain();
     const client = createWalletClient({
       account: address,
-      chain,
+      chain: rpcChain,
       transport: custom(window.ethereum as Parameters<typeof custom>[0]),
     });
 

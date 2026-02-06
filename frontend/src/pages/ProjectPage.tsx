@@ -244,11 +244,21 @@ const ProjectPage = () => {
 
   useEffect(() => {
     if (EXPLORER_URL) return;
-    // Use chain ID from publicClient
-    const chainId = publicClient.chain?.id;
-    if (chainId) {
-      setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl(chainId)));
-    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const chainId = await publicClient.getChainId();
+        if (!cancelled) {
+          setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl(chainId)));
+        }
+      } catch {
+        // keep fallback explorer url
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const reloadProjectData = useCallback(async () => {
