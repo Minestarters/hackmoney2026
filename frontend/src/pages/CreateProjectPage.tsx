@@ -73,6 +73,32 @@ const dateInputValueToUnixSeconds = (value: string) => {
 const shortAddress = (addr: string) =>
   addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
 
+type DecodedEventLike = {
+  eventName?: string;
+  args?: readonly unknown[] | Record<string, unknown>;
+};
+
+const extractVaultFromDecodedEvent = (decoded: DecodedEventLike): `0x${string}` | null => {
+  const { args, eventName } = decoded;
+  if (!args || !eventName) return null;
+
+  if (Array.isArray(args)) {
+    if (eventName === "ProjectCreated") {
+      return args[1] as `0x${string}`;
+    }
+    if (eventName === "ProjectCreatedWithNAV") {
+      return args[0] as `0x${string}`;
+    }
+    return null;
+  }
+
+  if (typeof args === "object" && "vault" in args) {
+    return (args as { vault: `0x${string}` }).vault;
+  }
+
+  return null;
+};
+
 const extractProjectAddressFromReceipt = (receipt: TransactionReceipt): `0x${string}` | null => {
   if (!FACTORY_ADDRESS) return null;
   const factoryAddress = FACTORY_ADDRESS.toLowerCase();
@@ -84,12 +110,8 @@ const extractProjectAddressFromReceipt = (receipt: TransactionReceipt): `0x${str
         data: log.data,
         topics: log.topics,
       });
-      if (decoded.eventName === "ProjectCreated") {
-        return decoded.args.vault as `0x${string}`;
-      }
-      if (decoded.eventName === "ProjectCreatedWithNAV") {
-        return decoded.args.vault as `0x${string}`;
-      }
+      const vault = extractVaultFromDecodedEvent(decoded);
+      if (vault) return vault;
     } catch {
       // Ignore non-factory logs or decode errors.
     }
@@ -729,7 +751,7 @@ const CreateProjectPage = () => {
         return;
       }
 
-      const hash = await writeFactory.createProject(walletClient, {
+      const hash = await writeFactory.createProjectWithNAV(walletClient, {
         projectName: localFormFields.projectName,
         companyNames: companiesForSubmit.map((c) => c.name),
         companyWeights: companiesForSubmit.map((c) => BigInt(c.weight)),
@@ -737,6 +759,7 @@ const CreateProjectPage = () => {
         deadline: BigInt(deadlineTs),
         withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
+        profitFeeBps: BigInt(profitFeeBps),
       });
 
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -823,7 +846,7 @@ const CreateProjectPage = () => {
         return;
       }
 
-      const hash = await writeFactory.createProject(walletClient, {
+      const hash = await writeFactory.createProjectWithNAV(walletClient, {
         projectName: localFormFields.projectName,
         companyNames: companiesForSubmit.map((c) => c.name),
         companyWeights: companiesForSubmit.map((c) => BigInt(c.weight)),
@@ -831,6 +854,7 @@ const CreateProjectPage = () => {
         deadline: BigInt(deadlineTs),
         withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
+        profitFeeBps: BigInt(profitFeeBps),
       });
 
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
