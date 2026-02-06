@@ -60,7 +60,6 @@ export const writeFactory = {
       deadline: bigint;
       withdrawAddress: `0x${string}`;
       raiseFeeBps: bigint;
-      profitFeeBps: bigint;
     },
   ) => {
     return walletClient.writeContract({
@@ -75,7 +74,6 @@ export const writeFactory = {
         args.deadline,
         args.withdrawAddress,
         args.raiseFeeBps,
-        args.profitFeeBps,
       ],
     });
   },
