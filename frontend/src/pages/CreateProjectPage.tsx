@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { parseUnits } from "viem";
+import { decodeEventLog, parseUnits, type TransactionReceipt } from "viem";
+import { Link } from "react-router-dom";
 import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { FACTORY_ADDRESS } from "../config";
+import { minestartersFactoryAbi } from "../contracts/abis";
 import { getWalletClient, publicClient } from "../lib/wagmi";
 import {
   createYellowSessionManager,
@@ -71,11 +73,36 @@ const dateInputValueToUnixSeconds = (value: string) => {
 const shortAddress = (addr: string) =>
   addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
 
+const extractProjectAddressFromReceipt = (receipt: TransactionReceipt): `0x${string}` | null => {
+  if (!FACTORY_ADDRESS) return null;
+  const factoryAddress = FACTORY_ADDRESS.toLowerCase();
+  for (const log of receipt.logs) {
+    if (log.address?.toLowerCase() !== factoryAddress) continue;
+    try {
+      const decoded = decodeEventLog({
+        abi: minestartersFactoryAbi,
+        data: log.data,
+        topics: log.topics,
+      });
+      if (decoded.eventName === "ProjectCreated") {
+        return decoded.args.vault as `0x${string}`;
+      }
+      if (decoded.eventName === "ProjectCreatedWithNAV") {
+        return decoded.args.vault as `0x${string}`;
+      }
+    } catch {
+      // Ignore non-factory logs or decode errors.
+    }
+  }
+  return null;
+};
+
 const CreateProjectPage = () => {
   const { address: account, isConnected } = useAccount();
   const { connect } = useConnect();
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [createdProjectAddress, setCreatedProjectAddress] = useState<`0x${string}` | null>(null);
 
   // Yellow Session State
   const [yellowLogs, setYellowLogs] = useState<string[]>([]);
@@ -640,6 +667,8 @@ const CreateProjectPage = () => {
 
   // Extract deployment logic for reuse
   const triggerDeployment = async () => {
+    setMessage(null);
+    setCreatedProjectAddress(null);
     if (!sessionState.basket) {
       setMessage("No basket data");
       setDeploymentTriggered(false);
@@ -710,11 +739,14 @@ const CreateProjectPage = () => {
         raiseFeeBps: BigInt(raiseFeeBps),
       });
 
-      await publicClient.waitForTransactionReceipt({ hash });
-      setMessage("Project created! Refresh home to see it.");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const projectAddress = extractProjectAddressFromReceipt(receipt);
+      setCreatedProjectAddress(projectAddress);
+      setMessage("Project created!");
     } catch (err) {
       console.error(err);
       setMessage("Transaction failed");
+      setCreatedProjectAddress(null);
       setDeploymentTriggered(false);
     } finally {
       setSubmitting(false);
@@ -737,6 +769,8 @@ const CreateProjectPage = () => {
   };
 
   const handleSoloDeploy = async () => {
+    setMessage(null);
+    setCreatedProjectAddress(null);
     if (!FACTORY_ADDRESS) {
       setMessage("Set VITE_FACTORY_ADDRESS to deploy");
       return;
@@ -799,13 +833,14 @@ const CreateProjectPage = () => {
         raiseFeeBps: BigInt(raiseFeeBps),
       });
 
-      await publicClient.waitForTransactionReceipt({ hash });
-      setMessage("Project created! Refresh home to see it.");
-      setSoloMode(false);
-      setSoloBasket({ companies: [], stakes: {} });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const projectAddress = extractProjectAddressFromReceipt(receipt);
+      setCreatedProjectAddress(projectAddress);
+      setMessage("Project created!");
     } catch (err) {
       console.error(err);
       setMessage("Transaction failed");
+      setCreatedProjectAddress(null);
     } finally {
       setSubmitting(false);
     }
@@ -814,6 +849,7 @@ const CreateProjectPage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
+    setCreatedProjectAddress(null);
 
     if (!FACTORY_ADDRESS) {
       setMessage("Set VITE_FACTORY_ADDRESS to deploy");
@@ -884,11 +920,14 @@ const CreateProjectPage = () => {
         profitFeeBps: BigInt(profitFeeBps)
       });
 
-      await publicClient.waitForTransactionReceipt({ hash });
-      setMessage("Project created! Refresh home to see it.");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const projectAddress = extractProjectAddressFromReceipt(receipt);
+      setCreatedProjectAddress(projectAddress);
+      setMessage("Project created!");
     } catch (err) {
       console.error(err);
       setMessage("Transaction failed");
+      setCreatedProjectAddress(null);
     } finally {
       setSubmitting(false);
     }
@@ -1755,11 +1794,24 @@ const CreateProjectPage = () => {
           </div>
 
           {message && (
-            <div className="flex items-center gap-2 rounded-lg bg-sky-900/30 p-3 text-sm text-sky-200">
+            <div className="flex items-start gap-2 rounded-lg bg-sky-900/30 p-3 text-sm text-sky-200">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              {message}
+              <div className="space-y-1">
+                <div>{message}</div>
+                {createdProjectAddress && (
+                  <Link
+                    to={`/project/${createdProjectAddress}`}
+                    className="inline-flex items-center gap-1 text-sky-100 underline underline-offset-4 transition-colors hover:text-white"
+                  >
+                    View project page
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
+                )}
+              </div>
             </div>
           )}
 
