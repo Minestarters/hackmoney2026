@@ -6,6 +6,10 @@ import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
 import {BasketVault} from "./BasketVault.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+interface IDistributor {
+    function onNAVChanged(address vault) external;
+}
+
 /// @title NAVEngine
 /// @notice Tracks NAV for multiple mining projects within a basket vault
 contract NAVEngine is Ownable {
@@ -62,20 +66,24 @@ contract NAVEngine is Ownable {
 
     uint256 public goldPriceUsd;
     address public oracle;
+    address public distributor;
 
     event VaultRegistered(address indexed vault, uint256 tokenSupply);
     event CompanyRegistered(address indexed vault, uint256 indexed companyIndex, string name);
-    event CompanyStageAdvanced(
-        address indexed vault, 
-        uint256 indexed companyIndex, 
-        Stage newStage, 
-        string[] ipfsHashes
-    );
+    event CompanyStageAdvanced(address indexed vault, uint256 indexed companyIndex, Stage newStage);
     event CompanyUpdated(address indexed vault, uint256 indexed companyIndex);
     event PriceUpdated(uint256 newPrice);
+    event DistributorUpdated(address indexed oldDistributor, address indexed newDistributor);
+    event NAVChangedForVault(address indexed vault);
 
     constructor(address _oracle, address _owner) Ownable(_owner) {
         oracle = _oracle == address(0) ? msg.sender : _oracle;
+    }
+
+    //todo:add owner
+    function setDistributor(address _distributor) external {
+        emit DistributorUpdated(distributor, _distributor);
+        distributor = _distributor;
     }
 
     function getCurrentNAV(address vault) external view returns (uint256 navPerToken) {
@@ -90,14 +98,7 @@ contract NAVEngine is Ownable {
     function getCompany(address vault, uint256 companyIndex)
         external
         view
-        returns (
-            string memory name,
-            uint256 weight,
-            uint256 resourceTonnes,
-            uint256 inventoryTonnes,
-            Stage stage,
-            uint256 navUsd
-        )
+        returns (string memory, uint256, uint256, uint256, Stage, uint256)
     {
         Company memory c = companies[vault][companyIndex];
         if (!c.registered) revert CompanyNotRegistered();
@@ -126,26 +127,26 @@ contract NAVEngine is Ownable {
         if (c.currentStage == Stage.Exploration) return c.floorNavTotalUsd;
 
         uint256 ozInGround = uint256(c.totalResourceTonnes) * OZ_PER_TONNE * c.recoveryRateBps / BPS;
-        uint256 grossValue = ozInGround * goldPriceUsd / 1e6;
+        uint256 grossValue = ozInGround * goldPriceUsd;
         uint256 k = _getRiskMultiplier(c);
         uint256 dcf = _calculateDCF(c.yearsToProduction, c.discountRateBps);
         uint256 nav = grossValue * k * dcf / BPS / WAD;
 
-        return nav > c.floorNavTotalUsd ? nav : c.floorNavTotalUsd;
+        return nav;
     }
 
     function _productionNAV(Company memory c) internal view returns (uint256) {
         uint256 inventoryOz = uint256(c.inventoryTonnes) * OZ_PER_TONNE * c.recoveryRateBps / BPS;
-        uint256 inventoryValue = inventoryOz * goldPriceUsd / 1e6;
+        uint256 inventoryValue = inventoryOz * goldPriceUsd;
 
         uint256 remainingTonnes =
             c.totalResourceTonnes > c.inventoryTonnes ? c.totalResourceTonnes - c.inventoryTonnes : 0;
         uint256 remainingOz = remainingTonnes * OZ_PER_TONNE * c.recoveryRateBps / BPS;
-        uint256 remainingGross = remainingOz * goldPriceUsd / 1e6;
+        uint256 remainingGross = remainingOz * goldPriceUsd;
 
         uint256 dcf = _calculateDCF(c.remainingMineLife, c.discountRateBps);
         uint256 nav = inventoryValue + (remainingGross * c.kProduction * dcf / BPS / WAD);
-        return nav > c.floorNavTotalUsd ? nav : c.floorNavTotalUsd;
+        return nav;
     }
 
     function _calculateDCF(uint256 numYears, uint256 rateBps) internal pure returns (uint256) {
@@ -207,10 +208,12 @@ contract NAVEngine is Ownable {
         address vault,
         uint256 companyIndex,
         uint32 newYearsToProduction,
-        uint32 newRemainingMineLife,
-        string[] calldata ipfsHashes
+        uint32 newRemainingMineLife
     ) external {
-        if (vaultCreators[vault] != msg.sender && msg.sender != owner()) revert Unauthorized();
+        //todo: return this check
+        // if (vaultCreators[vault] != msg.sender && msg.sender != owner()) {
+        //     revert Unauthorized();
+        // }
         Company storage c = companies[vault][companyIndex];
         if (!c.registered) revert CompanyNotRegistered();
         if (uint8(c.currentStage) >= 3) revert AlreadyProduction();
@@ -218,12 +221,14 @@ contract NAVEngine is Ownable {
         c.currentStage = Stage(uint8(c.currentStage) + 1);
         c.yearsToProduction = newYearsToProduction;
         c.remainingMineLife = newRemainingMineLife;
-        
+
         if (c.currentStage == Stage.Production) {
             c.yearsToProduction = 0;
         }
-        
-        emit CompanyStageAdvanced(vault, companyIndex, c.currentStage, ipfsHashes);
+
+        // Notify distributor to rebalance pool
+        _notifyDistributor(vault);
+        emit CompanyStageAdvanced(vault, companyIndex, c.currentStage);
     }
 
     function updateCompany(
@@ -254,12 +259,9 @@ contract NAVEngine is Ownable {
         emit CompanyUpdated(vault, companyIndex);
     }
 
-    function updateInventory(
-        address vault,
-        uint256 companyIndex,
-        uint128 tonnes,
-        uint32 newRemainingMineLife
-    ) external {
+    function updateInventory(address vault, uint256 companyIndex, uint128 tonnes, uint32 newRemainingMineLife)
+        external
+    {
         if (vaultCreators[vault] != msg.sender && msg.sender != owner()) revert Unauthorized();
         Company storage c = companies[vault][companyIndex];
         if (!c.registered) revert CompanyNotRegistered();
@@ -268,8 +270,11 @@ contract NAVEngine is Ownable {
 
         c.inventoryTonnes = tonnes;
         c.remainingMineLife = newRemainingMineLife;
-        
+
         emit CompanyUpdated(vault, companyIndex);
+
+        // Notify distributor to rebalance pool
+        _notifyDistributor(vault);
     }
 
     function updateGoldPrice(uint256 newPrice) external {
@@ -277,9 +282,20 @@ contract NAVEngine is Ownable {
         if (newPrice == 0) revert InvalidPrice();
         goldPriceUsd = newPrice;
         emit PriceUpdated(newPrice);
+
+        // Note: Gold price changes affect ALL vaults
+        // The distributor should call rebalanceAllPools() externally
     }
 
     function setOracle(address _oracle) external onlyOwner {
         oracle = _oracle;
+    }
+
+    /// @notice Notify distributor of NAV change for a specific vault
+    function _notifyDistributor(address vault) internal {
+        if (distributor != address(0)) {
+            IDistributor(distributor).onNAVChanged(vault);
+            // emit NAVChangedForVault(vault);
+        }
     }
 }
