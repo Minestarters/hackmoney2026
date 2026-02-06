@@ -14,6 +14,8 @@ export const YELLOW_SCOPE =
 export const YELLOW_SESSION_EXPIRES_MS = Number(
   import.meta.env.VITE_YELLOW_SESSION_EXPIRES_MS || `${7 * 24 * 60 * 60 * 1000}`
 );
+export const SESSION_API_URL =
+  import.meta.env.VITE_SESSION_API_URL || "https://hackmoney2026.onrender.com";
 export const YELLOW_WALLET_1_SEED_PHRASE =
   import.meta.env.VITE_WALLET_1_SEED_PHRASE || "";
 export const YELLOW_WALLET_2_SEED_PHRASE =
