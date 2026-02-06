@@ -350,15 +350,6 @@ const CreateProjectPage = () => {
     }
   };
 
-  const handleCloseSession = async () => {
-    try {
-      await sessionManager.closeSession();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to close session";
-      setYellowError(msg);
-    }
-  };
-
   const handleDisconnect = () => {
     clearJoinerPoll();
     clearInvitePoll();
