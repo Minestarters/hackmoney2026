@@ -4,7 +4,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --outDir dist",
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts"
   },
