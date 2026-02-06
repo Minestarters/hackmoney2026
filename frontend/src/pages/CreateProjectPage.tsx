@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseUnits } from "viem";
-import { useConnect, useConnection } from "wagmi";
+import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { FACTORY_ADDRESS } from "../config";
 import { getWalletClient, publicClient } from "../lib/wagmi";
@@ -72,8 +72,8 @@ const shortAddress = (addr: string) =>
   addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
 
 const CreateProjectPage = () => {
-  const { address: account, isConnected } = useConnection();
-  const { mutate } = useConnect();
+  const { address: account, isConnected } = useAccount();
+  const { connect } = useConnect();
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -346,15 +346,6 @@ const CreateProjectPage = () => {
       startInvitePolling(trimmedCode);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to join session";
-      setYellowError(msg);
-    }
-  };
-
-  const handleCloseSession = async () => {
-    try {
-      await sessionManager.closeSession();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to close session";
       setYellowError(msg);
     }
   };
@@ -677,7 +668,7 @@ const CreateProjectPage = () => {
     }
 
     if (!isConnected) {
-      mutate({ connector: injected() });
+      connect({ connector: injected() });
       setDeploymentTriggered(false);
       return;
     }
@@ -717,7 +708,6 @@ const CreateProjectPage = () => {
         deadline: BigInt(deadlineTs),
         withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
-        profitFeeBps: BigInt(profitFeeBps),
       });
 
       await publicClient.waitForTransactionReceipt({ hash });
@@ -771,7 +761,7 @@ const CreateProjectPage = () => {
     }
 
     if (!isConnected) {
-      mutate({ connector: injected() });
+      connect({ connector: injected() });
       return;
     }
 
@@ -807,7 +797,6 @@ const CreateProjectPage = () => {
         deadline: BigInt(deadlineTs),
         withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
-        profitFeeBps: BigInt(profitFeeBps),
       });
 
       await publicClient.waitForTransactionReceipt({ hash });
@@ -856,7 +845,7 @@ const CreateProjectPage = () => {
     }
 
     if (!isConnected) {
-      mutate({ connector: injected() });
+      connect({ connector: injected() });
       return;
     }
 
@@ -892,7 +881,6 @@ const CreateProjectPage = () => {
         deadline: BigInt(deadlineTs),
         withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
-        profitFeeBps: BigInt(profitFeeBps),
       });
 
       await publicClient.waitForTransactionReceipt({ hash });

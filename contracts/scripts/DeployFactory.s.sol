@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: ISC
 pragma solidity ^0.8.24;
 
-import "forge-std/Script.sol";
-import "../src/MinestartersFactory.sol";
+import {Script, console} from "forge-std/Script.sol";
+import {MinestartersFactory} from "../src/MinestartersFactory.sol";
 
 contract DeployFactory is Script {
     function run() external {

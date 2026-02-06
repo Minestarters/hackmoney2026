@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { parseUnits } from "viem";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
+import BridgeKitModal from "../components/BridgeKitModal";
+import DistributeProfitModal from "../components/DistributeProfitModal";
+import { formatUnits, parseUnits } from "viem";
 import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -14,7 +16,6 @@ import {
 import {
   fetchProjectInfo,
   fetchSupporterCount,
-  fetchTotalClaimed,
   fetchUserPosition,
   writeVault,
   writeUsdc,
@@ -143,32 +144,6 @@ const IconFee = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const IconProfit = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    {...props}
-  >
-    <path d="M3 3v18h18" />
-    <path d="M7 14l4-4 3 3 5-7" />
-  </svg>
-);
-
-const IconClaim = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    {...props}
-  >
-    <path d="M21 6H3v12h18V6z" />
-    <path d="M7 12l3 3 7-7" />
-  </svg>
-);
-
 const ProjectPage = () => {
   const { address } = useParams<{ address: string }>();
   const { address: account, isConnected } = useAccount();
@@ -176,15 +151,16 @@ const ProjectPage = () => {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [position, setPosition] = useState<UserPosition | null>(null);
   const [supportCount, setSupportCount] = useState<number | null>(null);
-  const [totalClaimed, setTotalClaimed] = useState<bigint | null>(null);
   const [activeTab, setActiveTab] = useState<"investor" | "spv">("investor");
-  const [amount, setAmount] = useState("0");
-  const [profitAmount, setProfitAmount] = useState("0");
   const [loading, setLoading] = useState(false);
+  const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [isDistributeProfitModalOpen, setIsDistributeProfitModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [explorerBaseUrl, setExplorerBaseUrl] = useState(() =>
     sanitizeExplorerUrl(getExplorerUrl()),
   );
+
   const profitsOpen = project
     ? project.totalRaised >= project.minimumRaise
     : false;
@@ -205,29 +181,36 @@ const ProjectPage = () => {
 
   useEffect(() => {
     if (EXPLORER_URL) return;
-    // Use chain ID from publicClient
-    const chainId = publicClient.chain?.id;
-    if (chainId) {
-      setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl(chainId)));
-    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const chainId = await publicClient.getChainId();
+        if (!cancelled) {
+          setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl(chainId)));
+        }
+      } catch {
+        // keep fallback explorer url
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const reloadProjectData = useCallback(async () => {
     if (!address) return;
     setSupportCount(null);
-    setTotalClaimed(null);
 
     try {
       const projectAddress = address as `0x${string}`;
-      const [info, supporters, claimedTotal] = await Promise.all([
+      const [info, supporters] = await Promise.all([
         fetchProjectInfo(projectAddress),
         fetchSupporterCount(projectAddress),
-        fetchTotalClaimed(projectAddress),
       ]);
 
       setProject(info);
       setSupportCount(supporters);
-      setTotalClaimed(claimedTotal);
     } catch (error) {
       console.error("Failed to reload project data", error);
     }
@@ -284,7 +267,15 @@ const ProjectPage = () => {
     };
   }, [account, project]);
 
-  const handleDeposit = async () => {
+  const handleDepositComplete = async () => {
+    await reloadProjectData();
+    setIsBridgeModalOpen(false);
+  };
+
+  const handleDepositContract = async (
+    amountStr: string,
+    chainId: number | bigint,
+  ) => {
     if (!project || !account) return;
     if (!isConnected) {
       connect({ connector: injected() });
@@ -303,96 +294,61 @@ const ProjectPage = () => {
       toast.error("Could not get wallet");
       return;
     }
-    try {
-      const value = parseUnits(amount || "0", 6);
-      const usdcRead = getUsdcRead();
-      const balance = await usdcRead.read.balanceOf([account]);
-      if (balance < value) {
-        toast.error(
-          `Insufficient USDC balance. You have ${formatUsdc(balance)} but need ${formatUsdc(value)}`,
-        );
-        return;
-      }
-      const allowance = await usdcRead.read.allowance([account, project.address as `0x${string}`]);
-      if (allowance < value) {
-        await toast.promise(
-          (async () => {
-            const hash = await writeUsdc.approve(walletClient, project.address as `0x${string}`, value);
-            await publicClient.waitForTransactionReceipt({ hash });
-          })(),
-          {
-            loading: "Approving USDC...",
-            success: "USDC approved",
-            error: (error) => {
-              markErrorHandled(error);
-              return `Approval failed: ${getRevertMessage(error)}`;
-            },
-          },
-        );
-      }
 
+    const value = parseUnits(amountStr || "0", 6);
+    const usdcRead = getUsdcRead();
+    const balance = await usdcRead.read.balanceOf([account]);
+
+    if (balance < value) {
+      const msg = `Insufficient USDC balance. You have ${formatUsdc(balance)} but need ${formatUsdc(value)}`;
+      toast.error(msg);
+      throw new Error(msg);
+    }
+
+    const allowance = await usdcRead.read.allowance([
+      account,
+      project.address as `0x${string}`,
+    ]);
+    if (allowance < value) {
       await toast.promise(
         (async () => {
-          const hash = await writeVault.deposit(walletClient, project.address as `0x${string}`, value);
+          const hash = await writeUsdc.approve(
+            walletClient,
+            project.address as `0x${string}`,
+            value,
+          );
           await publicClient.waitForTransactionReceipt({ hash });
         })(),
         {
-          loading: "Depositing...",
-          success: "Deposit confirmed",
+          loading: "Approving USDC...",
+          success: "USDC approved",
           error: (error) => {
             markErrorHandled(error);
-            return `Deposit failed: ${getRevertMessage(error)}`;
+            return `Approval failed: ${getRevertMessage(error)}`;
           },
         },
       );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Deposit failed: ${getRevertMessage(error)}`);
-      }
     }
-  };
 
-  const handleClaim = async () => {
-    if (!project) return;
-    if (!isConnected) {
-      connect({ connector: injected() });
-      return;
-    }
-    if (!profitsOpen) {
-      toast.error(
-        "Project must reach the minimum raise before claiming profits",
-      );
-      return;
-    }
-    const walletClient = await getWalletClient();
-    if (!walletClient) {
-      toast.error("Could not get wallet");
-      return;
-    }
-    try {
-      await toast.promise(
-        (async () => {
-          const hash = await writeVault.claimProfit(walletClient, project.address as `0x${string}`);
-          await publicClient.waitForTransactionReceipt({ hash });
-        })(),
-        {
-          loading: "Claiming profits...",
-          success: "Profits claimed",
-          error: (error) => {
-            markErrorHandled(error);
-            return `Claim failed: ${getRevertMessage(error)}`;
-          },
+    await toast.promise(
+      (async () => {
+        const hash = await writeVault.deposit(
+          walletClient,
+          project.address as `0x${string}`,
+          value,
+          chainId,
+        );
+        await publicClient.waitForTransactionReceipt({ hash });
+      })(),
+      {
+        loading: "Depositing...",
+        success: "Deposit confirmed",
+        error: (error) => {
+          markErrorHandled(error);
+          return `Deposit failed: ${getRevertMessage(error)}`;
         },
-      );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Claim failed: ${getRevertMessage(error)}`);
-      }
-    }
+      },
+    );
   };
 
   const handleRefund = async () => {
@@ -430,114 +386,39 @@ const ProjectPage = () => {
     }
   };
 
-  const handleWithdrawRaised = async () => {
-    if (!project) return;
-    if (!isConnected) {
-      connect({ connector: injected() });
-      return;
-    }
-    if (!canWithdrawRaised) {
-      toast.error("No withdrawable funds available");
-      return;
-    }
-    const walletClient = await getWalletClient();
-    if (!walletClient) {
-      toast.error("Could not get wallet");
-      return;
-    }
-    try {
-      await toast.promise(
-        (async () => {
-          const hash = await writeVault.withdrawRaisedFunds(walletClient, project.address as `0x${string}`);
-          await publicClient.waitForTransactionReceipt({ hash });
-        })(),
-        {
-          loading: "Withdrawing raised funds...",
-          success: "Raised funds withdrawn",
-          error: (error) => {
-            markErrorHandled(error);
-            return `Withdraw failed: ${getRevertMessage(error)}`;
-          },
-        },
-      );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Withdraw failed: ${getRevertMessage(error)}`);
-      }
-    }
+  const handleWithdrawComplete = async () => {
+    await reloadProjectData();
+    setIsWithdrawModalOpen(false);
   };
 
-  const handleDepositProfit = async () => {
+  const handleWithdrawContract = async () => {
     if (!project || !account) return;
     if (!isConnected) {
       connect({ connector: injected() });
       return;
     }
-    if (!USDC_ADDRESS) {
-      toast.error("Set VITE_USDC_ADDRESS for deposits");
-      return;
-    }
     const walletClient = await getWalletClient();
     if (!walletClient) {
       toast.error("Could not get wallet");
       return;
     }
-
-    try {
-      const value = parseUnits(profitAmount || "0", 6);
-      if (value <= 0n) {
-        toast.error("Enter a profit amount greater than zero");
-        return;
-      }
-      if (!profitsOpen) {
-        toast.error(
-          "Project must reach the minimum raise before profit deposits",
+    await toast.promise(
+      (async () => {
+        const hash = await writeVault.withdrawRaisedFunds(
+          walletClient,
+          project.address as `0x${string}`,
         );
-        return;
-      }
-
-      const usdcRead = getUsdcRead();
-      const allowance = await usdcRead.read.allowance([account, project.address as `0x${string}`]);
-      if (allowance < value) {
-        await toast.promise(
-          (async () => {
-            const hash = await writeUsdc.approve(walletClient, project.address as `0x${string}`, value);
-            await publicClient.waitForTransactionReceipt({ hash });
-          })(),
-          {
-            loading: "Approving USDC...",
-            success: "USDC approved",
-            error: (error) => {
-              markErrorHandled(error);
-              return `Approval failed: ${getRevertMessage(error)}`;
-            },
-          },
-        );
-      }
-
-      await toast.promise(
-        (async () => {
-          const hash = await writeVault.depositProfit(walletClient, project.address as `0x${string}`, value);
-          await publicClient.waitForTransactionReceipt({ hash });
-        })(),
-        {
-          loading: "Depositing profit...",
-          success: "Profit deposited",
-          error: (error) => {
-            markErrorHandled(error);
-            return `Profit deposit failed: ${getRevertMessage(error)}`;
-          },
+        await publicClient.waitForTransactionReceipt({ hash });
+      })(),
+      {
+        loading: "Withdrawing raised funds...",
+        success: "Raised funds withdrawn",
+        error: (error) => {
+          markErrorHandled(error);
+          return `Withdraw failed: ${getRevertMessage(error)}`;
         },
-      );
-      await reloadProjectData();
-    } catch (error) {
-      console.error(error);
-      if (!wasErrorHandled(error)) {
-        toast.error(`Profit deposit failed: ${getRevertMessage(error)}`);
-      }
-    }
+      },
+    );
   };
 
   if (!address) {
@@ -548,8 +429,6 @@ const ProjectPage = () => {
     return <p className="text-xs text-stone-200">Loading project...</p>;
   }
 
-  const claimableAmount = position?.pending ?? 0n;
-  const canClaim = profitsOpen && claimableAmount > 0n;
   const showRefund = Boolean(
     position && project.stage === 2 && position.shares > 0n,
   );
@@ -562,8 +441,7 @@ const ProjectPage = () => {
       ? (project.totalRaised * 10_000n) / project.minimumRaise
       : 0n;
   const raisedPct = Math.min(100, Math.max(0, Number(raisedBps) / 100));
-  const creatorFeesPaid =
-    project.totalRaiseFeesPaid + project.totalProfitFeesPaid;
+  const creatorFeesPaid = project.totalRaiseFeesPaid;
   const withdrawnBySpv =
     project.withdrawnTotal > project.totalRaiseFeesPaid
       ? project.withdrawnTotal - project.totalRaiseFeesPaid
@@ -650,15 +528,6 @@ const ProjectPage = () => {
               }
             />
             <MetricCard
-              label="Revenue Fee"
-              icon={IconFee}
-              value={
-                <span className="text-[12px] text-stone-300">
-                  {formatBpsAsPercent(project.profitFeeBps)}
-                </span>
-              }
-            />
-            <MetricCard
               label="Supporters"
               icon={IconUsers}
               value={
@@ -671,26 +540,6 @@ const ProjectPage = () => {
           </div>
 
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <MetricCard
-              label="Lifetime Profit"
-              icon={IconProfit}
-              value={
-                <span className="text-[12px] text-stone-300">
-                  {formatUsdc(project.totalProfit)} USDC
-                </span>
-              }
-            />
-            <MetricCard
-              label="Profits Claimed"
-              icon={IconClaim}
-              value={
-                <span className="text-[12px] text-stone-300">
-                  {totalClaimed === null
-                    ? "—"
-                    : `${formatUsdc(totalClaimed)} USDC`}
-                </span>
-              }
-            />
             <MetricCard
               label="Creator Fees Paid"
               icon={IconFee}
@@ -830,41 +679,12 @@ const ProjectPage = () => {
             <div className="space-y-4">
               <div className="rounded border-4 border-dirt bg-night/40 p-3">
                 <p className="mb-2 text-[10px] text-stone-400">Deposit USDC</p>
-                <input
-                  className="input-blocky mb-3 w-full rounded px-3 py-2 text-xs"
-                  type="number"
-                  min="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
                 <button
-                  onClick={handleDeposit}
+                  onClick={() => setIsBridgeModalOpen(true)}
                   className="button-blocky w-full rounded px-3 py-2 text-[11px] uppercase"
                 >
                   Deposit
                 </button>
-              </div>
-
-              <div className="rounded border-4 border-dirt bg-night/40 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] text-stone-400">
-                      Claimable profit
-                    </p>
-                    <p className="text-[11px] text-sky-100">
-                      {account
-                        ? `${formatUsdc(claimableAmount)} USDC`
-                        : "Connect wallet to view"}
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleClaim}
-                    disabled={!canClaim}
-                    className="button-blocky rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Claim
-                  </button>
-                </div>
               </div>
 
               {showRefund && (
@@ -895,7 +715,7 @@ const ProjectPage = () => {
                     </p>
                   </div>
                   <button
-                    onClick={handleWithdrawRaised}
+                    onClick={() => setIsWithdrawModalOpen(true)}
                     disabled={!canWithdrawRaised}
                     className="button-blocky rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -909,21 +729,15 @@ const ProjectPage = () => {
 
               <div className="rounded border-4 border-dirt bg-night/40 p-3">
                 <p className="mb-2 text-[10px] text-stone-400">
-                  Deposit Profit
+                  Distribute Profit
                 </p>
-                <input
-                  className="input-blocky mb-3 w-full rounded px-3 py-2 text-xs"
-                  type="number"
-                  min="0"
-                  value={profitAmount}
-                  onChange={(e) => setProfitAmount(e.target.value)}
-                />
+                
                 <button
-                  onClick={handleDepositProfit}
+                  onClick={() => setIsDistributeProfitModalOpen(true)}
                   disabled={!profitsOpen}
                   className="button-blocky w-full rounded px-3 py-2 text-[11px] uppercase disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Add Profit
+                  Distribute Profit
                 </button>
               </div>
             </div>
@@ -965,13 +779,7 @@ const ProjectPage = () => {
                 <div className="flex justify-between">
                   <span className="text-stone-300">Share balance</span>
                   <span className="text-sky-100">
-                    {formatUsdc(position.shareBalance)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-stone-300">Claimable profit</span>
-                  <span className="text-sky-100">
-                    {formatUsdc(position.pending)}
+                    {formatUsdc(position.shares)}
                   </span>
                 </div>
               </div>
@@ -983,6 +791,38 @@ const ProjectPage = () => {
           </div>
         </div>
       </div>
+
+      <BridgeKitModal
+        isOpen={isBridgeModalOpen}
+        onClose={() => setIsBridgeModalOpen(false)}
+        project={project}
+        onComplete={handleDepositComplete}
+        ctaLabel="Deposit"
+        bridgeMode="before"
+        showAmount={true}
+        initialAmount="0"
+        onContractMethod={handleDepositContract}
+      />
+
+      <BridgeKitModal
+        isOpen={isWithdrawModalOpen}
+        onClose={() => setIsWithdrawModalOpen(false)}
+        project={project}
+        onComplete={handleWithdrawComplete}
+        ctaLabel="Withdraw"
+        bridgeMode="after"
+        initialAmount={formatUnits(withdrawPrincipal, 6)}
+        showAmount={false}
+        onContractMethod={handleWithdrawContract}
+      />
+
+      {project && (
+        <DistributeProfitModal
+          isOpen={isDistributeProfitModalOpen}
+          onClose={() => setIsDistributeProfitModalOpen(false)}
+          project={project}
+        />
+      )}
     </div>
   );
 };

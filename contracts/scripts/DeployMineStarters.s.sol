@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: ISC
 pragma solidity ^0.8.24;
 
-import "forge-std/Script.sol";
-import "../src/MineStarters.sol";
+import {Script, console} from "forge-std/Script.sol";
+import {MineStarters} from "../src/MineStarters.sol";
 
 contract DeployMineStarters is Script {
     function run() external {

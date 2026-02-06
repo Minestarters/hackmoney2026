@@ -2,7 +2,7 @@
 
 ## 📁 Project Structure
 
-This is a **Yarn Workspace** monorepo containing:
+This is a **Yarn Workspace** monorepo containing :
 
 ```
 hackmoney2026/

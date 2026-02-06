@@ -59,6 +59,8 @@ const MintButton = () => {
 
   const disabled = minting || isPending;
 
+  return null;
+
   return (
     <div className="flex flex-col items-center gap-1">
       <button
