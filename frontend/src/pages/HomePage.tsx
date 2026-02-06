@@ -4,13 +4,11 @@ import { Pie, PieChart, Cell, ResponsiveContainer } from "recharts";
 import { FACTORY_ADDRESS, STAGE_LABELS } from "../config";
 import { fetchProjectAddresses, fetchProjectInfo } from "../lib/contracts";
 import { formatUsdc } from "../lib/format";
-import { useWallet } from "../context/WalletContext";
 import type { ProjectInfo } from "../types";
 
 const colors = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
 
 const HomePage = () => {
-  const { provider } = useWallet();
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,9 +23,9 @@ const HomePage = () => {
       setLoading(true);
       setError(null);
       try {
-        const addresses = await fetchProjectAddresses(provider);
+        const addresses = await fetchProjectAddresses();
         const infos = await Promise.all(
-          addresses.map((addr) => fetchProjectInfo(addr, provider))
+          addresses.map((addr) => fetchProjectInfo(addr))
         );
         setProjects(infos);
       } catch (e) {
@@ -39,7 +37,7 @@ const HomePage = () => {
     };
 
     load();
-  }, [provider]);
+  }, []);
 
   return (
     <div className="space-y-6">

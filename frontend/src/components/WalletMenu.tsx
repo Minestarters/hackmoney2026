@@ -1,24 +1,26 @@
-import { useWallet } from "../context/WalletContext";
+import { useAccount, useConnect } from "wagmi";
+import { injected } from "wagmi/connectors";
 import { shortAddress } from "../lib/format";
 
 const WalletMenu = () => {
-  const { account, connect, isConnecting } = useWallet();
+  const { address, isConnected } = useAccount();
+  const { connect, isPending } = useConnect();
 
-  if (!account) {
+  if (!isConnected) {
     return (
       <button
-        onClick={connect}
+        onClick={() => connect({ connector: injected() })}
         className="button-blocky rounded px-4 py-2 text-xs uppercase"
-        disabled={isConnecting}
+        disabled={isPending}
       >
-        {isConnecting ? "Connecting..." : "Connect Wallet"}
+        {isPending ? "Connecting..." : "Connect Wallet"}
       </button>
     );
   }
 
   return (
     <span className="button-blocky inline-block rounded px-4 py-2 text-xs uppercase">
-      {shortAddress(account)}
+      {shortAddress(address ?? "")}
     </span>
   );
 };

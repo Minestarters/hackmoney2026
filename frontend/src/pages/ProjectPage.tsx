@@ -1,24 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams, Link } from "react-router-dom";
-import { parseUnits } from "ethers";
+import { Link, useParams } from "react-router-dom";
+import { parseUnits } from "viem";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
+import { useAccount, useConnect } from "wagmi";
+import { injected } from "wagmi/connectors";
 import {
   EXPLORER_URL,
   STAGE_LABELS,
   USDC_ADDRESS,
   getExplorerUrl,
 } from "../config";
-import { useWallet } from "../context/WalletContext";
 import {
   fetchProjectInfo,
   fetchSupporterCount,
   fetchTotalClaimed,
   fetchUserPosition,
-  getVault,
-  getUsdc,
+  writeVault,
+  writeUsdc,
+  getUsdcRead,
 } from "../lib/contracts";
 import { formatBpsAsPercent, formatUsdc, shortAddress } from "../lib/format";
+import { publicClient, getWalletClient } from "../lib/wagmi";
 import type { ProjectInfo, UserPosition } from "../types";
 
 const PIE_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
@@ -204,7 +207,8 @@ const CompanyBreakdownItem = ({
 
 const ProjectPage = () => {
   const { address } = useParams<{ address: string }>();
-  const { provider, signer, account, connect } = useWallet();
+  const { address: account, isConnected } = useAccount();
+  const { connect } = useConnect();
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [position, setPosition] = useState<UserPosition | null>(null);
   const [supportCount, setSupportCount] = useState<number | null>(null);
@@ -237,42 +241,24 @@ const ProjectPage = () => {
 
   useEffect(() => {
     if (EXPLORER_URL) return;
-    let cancelled = false;
-
-    const resolveExplorer = async () => {
-      if (!provider) return;
-      try {
-        const network = await provider.getNetwork();
-        if (!cancelled) {
-          setExplorerBaseUrl(
-            sanitizeExplorerUrl(getExplorerUrl(network.chainId)),
-          );
-        }
-      } catch (error) {
-        console.error("Failed to determine explorer URL", error);
-        if (!cancelled) {
-          setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl()));
-        }
-      }
-    };
-
-    resolveExplorer();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [provider]);
+    // Use chain ID from publicClient
+    const chainId = publicClient.chain?.id;
+    if (chainId) {
+      setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl(chainId)));
+    }
+  }, []);
 
   const reloadProjectData = useCallback(async () => {
-    if (!address || !provider) return;
+    if (!address) return;
     setSupportCount(null);
     setTotalClaimed(null);
 
     try {
+      const projectAddress = address as `0x${string}`;
       const [info, supporters, claimedTotal] = await Promise.all([
-        fetchProjectInfo(address, provider),
-        fetchSupporterCount(address, provider),
-        fetchTotalClaimed(address, provider),
+        fetchProjectInfo(projectAddress),
+        fetchSupporterCount(projectAddress),
+        fetchTotalClaimed(projectAddress),
       ]);
 
       setProject(info);
@@ -281,7 +267,7 @@ const ProjectPage = () => {
     } catch (error) {
       console.error("Failed to reload project data", error);
     }
-  }, [address, provider]);
+  }, [address]);
 
   useEffect(() => {
     if (!address) return;
@@ -310,12 +296,12 @@ const ProjectPage = () => {
       setPosition(null);
       return;
     }
-    if (!project || !provider) return;
+    if (!project) return;
 
     let cancelled = false;
     const loadPosition = async () => {
       try {
-        const pos = await fetchUserPosition(project, account, provider);
+        const pos = await fetchUserPosition(project, account as `0x${string}`);
         if (!cancelled) {
           setPosition(pos);
         }
@@ -332,12 +318,12 @@ const ProjectPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [account, project, provider]);
+  }, [account, project]);
 
   const handleDeposit = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
+    if (!project || !account) return;
+    if (!isConnected) {
+      connect({ connector: injected() });
       return;
     }
     if (project.stage === 2) {
@@ -348,21 +334,28 @@ const ProjectPage = () => {
       toast.error("Set VITE_USDC_ADDRESS for deposits");
       return;
     }
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      toast.error("Could not get wallet");
+      return;
+    }
     try {
       const value = parseUnits(amount || "0", 6);
-      const usdc = getUsdc(signer);
-      const owner = await signer.getAddress();
-      const balance: bigint = await usdc.balanceOf(owner);
+      const usdcRead = getUsdcRead();
+      const balance = await usdcRead.read.balanceOf([account]);
       if (balance < value) {
         toast.error(
           `Insufficient USDC balance. You have ${formatUsdc(balance)} but need ${formatUsdc(value)}`,
         );
         return;
       }
-      const allowance: bigint = await usdc.allowance(owner, project.address);
+      const allowance = await usdcRead.read.allowance([account, project.address as `0x${string}`]);
       if (allowance < value) {
         await toast.promise(
-          usdc.approve(project.address, value).then((tx) => tx.wait()),
+          (async () => {
+            const hash = await writeUsdc.approve(walletClient, project.address as `0x${string}`, value);
+            await publicClient.waitForTransactionReceipt({ hash });
+          })(),
           {
             loading: "Approving USDC...",
             success: "USDC approved",
@@ -374,9 +367,11 @@ const ProjectPage = () => {
         );
       }
 
-      const vault = getVault(project.address, signer);
       await toast.promise(
-        vault.deposit(value).then((tx) => tx.wait()),
+        (async () => {
+          const hash = await writeVault.deposit(walletClient, project.address as `0x${string}`, value);
+          await publicClient.waitForTransactionReceipt({ hash });
+        })(),
         {
           loading: "Depositing...",
           success: "Deposit confirmed",
@@ -397,8 +392,8 @@ const ProjectPage = () => {
 
   const handleClaim = async () => {
     if (!project) return;
-    if (!signer) {
-      await connect();
+    if (!isConnected) {
+      connect({ connector: injected() });
       return;
     }
     if (!profitsOpen) {
@@ -407,10 +402,17 @@ const ProjectPage = () => {
       );
       return;
     }
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      toast.error("Could not get wallet");
+      return;
+    }
     try {
-      const vault = getVault(project.address, signer);
       await toast.promise(
-        vault.claimProfit().then((tx) => tx.wait()),
+        (async () => {
+          const hash = await writeVault.claimProfit(walletClient, project.address as `0x${string}`);
+          await publicClient.waitForTransactionReceipt({ hash });
+        })(),
         {
           loading: "Claiming profits...",
           success: "Profits claimed",
@@ -431,14 +433,21 @@ const ProjectPage = () => {
 
   const handleRefund = async () => {
     if (!project) return;
-    if (!signer) {
-      await connect();
+    if (!isConnected) {
+      connect({ connector: injected() });
+      return;
+    }
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      toast.error("Could not get wallet");
       return;
     }
     try {
-      const vault = getVault(project.address, signer);
       await toast.promise(
-        vault.refund().then((tx) => tx.wait()),
+        (async () => {
+          const hash = await writeVault.refund(walletClient, project.address as `0x${string}`);
+          await publicClient.waitForTransactionReceipt({ hash });
+        })(),
         {
           loading: "Processing refund...",
           success: "Refund complete",
@@ -459,18 +468,25 @@ const ProjectPage = () => {
 
   const handleWithdrawRaised = async () => {
     if (!project) return;
-    if (!signer) {
-      await connect();
+    if (!isConnected) {
+      connect({ connector: injected() });
       return;
     }
     if (!canWithdrawRaised) {
       toast.error("No withdrawable funds available");
       return;
     }
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      toast.error("Could not get wallet");
+      return;
+    }
     try {
-      const vault = getVault(project.address, signer);
       await toast.promise(
-        vault.withdrawRaisedFunds().then((tx) => tx.wait()),
+        (async () => {
+          const hash = await writeVault.withdrawRaisedFunds(walletClient, project.address as `0x${string}`);
+          await publicClient.waitForTransactionReceipt({ hash });
+        })(),
         {
           loading: "Withdrawing raised funds...",
           success: "Raised funds withdrawn",
@@ -490,13 +506,18 @@ const ProjectPage = () => {
   };
 
   const handleDepositProfit = async () => {
-    if (!project) return;
-    if (!signer) {
-      await connect();
+    if (!project || !account) return;
+    if (!isConnected) {
+      connect({ connector: injected() });
       return;
     }
     if (!USDC_ADDRESS) {
       toast.error("Set VITE_USDC_ADDRESS for deposits");
+      return;
+    }
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      toast.error("Could not get wallet");
       return;
     }
 
@@ -513,12 +534,14 @@ const ProjectPage = () => {
         return;
       }
 
-      const usdc = getUsdc(signer);
-      const owner = await signer.getAddress();
-      const allowance: bigint = await usdc.allowance(owner, project.address);
+      const usdcRead = getUsdcRead();
+      const allowance = await usdcRead.read.allowance([account, project.address as `0x${string}`]);
       if (allowance < value) {
         await toast.promise(
-          usdc.approve(project.address, value).then((tx) => tx.wait()),
+          (async () => {
+            const hash = await writeUsdc.approve(walletClient, project.address as `0x${string}`, value);
+            await publicClient.waitForTransactionReceipt({ hash });
+          })(),
           {
             loading: "Approving USDC...",
             success: "USDC approved",
@@ -530,9 +553,11 @@ const ProjectPage = () => {
         );
       }
 
-      const vault = getVault(project.address, signer);
       await toast.promise(
-        vault.depositProfit(value).then((tx) => tx.wait()),
+        (async () => {
+          const hash = await writeVault.depositProfit(walletClient, project.address as `0x${string}`, value);
+          await publicClient.waitForTransactionReceipt({ hash });
+        })(),
         {
           loading: "Depositing profit...",
           success: "Profit deposited",
@@ -946,7 +971,7 @@ const ProjectPage = () => {
             </div>
             {!account && (
               <button
-                onClick={connect}
+                onClick={() => connect({ connector: injected() })}
                 className="button-blocky rounded px-3 py-2 text-[11px] uppercase"
               >
                 Connect
