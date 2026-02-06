@@ -2,7 +2,23 @@ import { BigInt, Address } from "@graphprotocol/graph-ts"
 import { ProjectCreated } from "../generated/MinestartersFactory/MinestartersFactory"
 import { Deposited, FundsWithdrawn, FundraisingFinalized, Refunded } from "../generated/templates/BasketVault/BasketVault"
 import { Transfer, BasketShareToken as BasketShareTokenContract } from "../generated/templates/BasketShareToken/BasketShareToken"
-import { Project, Holder } from "../generated/schema"
+import {
+  Project, Holder,
+  CompanyRegistered,
+  CompanyStageAdvanced,
+  CompanyUpdated,
+  OwnershipTransferred,
+  PriceUpdated,
+  VaultRegistered
+} from "../generated/schema"
+import {
+  CompanyRegistered as CompanyRegisteredEvent,
+  CompanyStageAdvanced as CompanyStageAdvancedEvent,
+  CompanyUpdated as CompanyUpdatedEvent,
+  OwnershipTransferred as OwnershipTransferredEvent,
+  PriceUpdated as PriceUpdatedEvent,
+  VaultRegistered as VaultRegisteredEvent
+} from "../generated/NAVEngine/NAVEngine"
 import { BasketVault, BasketShareToken } from "../generated/templates"
 
 export function handleProjectCreated(event: ProjectCreated): void {
@@ -97,4 +113,96 @@ export function handleTransfer(event: Transfer): void {
     holder.balance = holder.balance.plus(value)
     holder.save()
   }
+}
+
+// NAVEngine
+
+export function handleCompanyRegistered(event: CompanyRegisteredEvent): void {
+  let entity = new CompanyRegistered(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  entity.vault = event.params.vault
+  entity.companyIndex = event.params.companyIndex
+  entity.name = event.params.name
+
+  entity.blockNumber = event.block.number
+  entity.blockTimestamp = event.block.timestamp
+  entity.transactionHash = event.transaction.hash
+
+  entity.save()
+}
+
+export function handleCompanyStageAdvanced(
+  event: CompanyStageAdvancedEvent
+): void {
+  let entity = new CompanyStageAdvanced(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  entity.vault = event.params.vault
+  entity.companyIndex = event.params.companyIndex
+  entity.newStage = event.params.newStage
+  entity.ipfsHashes = event.params.ipfsHashes
+
+  entity.blockNumber = event.block.number
+  entity.blockTimestamp = event.block.timestamp
+  entity.transactionHash = event.transaction.hash
+
+  entity.save()
+}
+
+export function handleCompanyUpdated(event: CompanyUpdatedEvent): void {
+  let entity = new CompanyUpdated(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  entity.vault = event.params.vault
+  entity.companyIndex = event.params.companyIndex
+
+  entity.blockNumber = event.block.number
+  entity.blockTimestamp = event.block.timestamp
+  entity.transactionHash = event.transaction.hash
+
+  entity.save()
+}
+
+export function handleOwnershipTransferred(
+  event: OwnershipTransferredEvent
+): void {
+  let entity = new OwnershipTransferred(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  entity.previousOwner = event.params.previousOwner
+  entity.newOwner = event.params.newOwner
+
+  entity.blockNumber = event.block.number
+  entity.blockTimestamp = event.block.timestamp
+  entity.transactionHash = event.transaction.hash
+
+  entity.save()
+}
+
+export function handlePriceUpdated(event: PriceUpdatedEvent): void {
+  let entity = new PriceUpdated(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  entity.newPrice = event.params.newPrice
+
+  entity.blockNumber = event.block.number
+  entity.blockTimestamp = event.block.timestamp
+  entity.transactionHash = event.transaction.hash
+
+  entity.save()
+}
+
+export function handleVaultRegistered(event: VaultRegisteredEvent): void {
+  let entity = new VaultRegistered(
+    event.transaction.hash.concatI32(event.logIndex.toI32())
+  )
+  entity.vault = event.params.vault
+  entity.tokenSupply = event.params.tokenSupply
+
+  entity.blockNumber = event.block.number
+  entity.blockTimestamp = event.block.timestamp
+  entity.transactionHash = event.transaction.hash
+
+  entity.save()
 }

@@ -65,7 +65,12 @@ contract NAVEngine is Ownable {
 
     event VaultRegistered(address indexed vault, uint256 tokenSupply);
     event CompanyRegistered(address indexed vault, uint256 indexed companyIndex, string name);
-    event CompanyStageAdvanced(address indexed vault, uint256 indexed companyIndex, Stage newStage);
+    event CompanyStageAdvanced(
+        address indexed vault, 
+        uint256 indexed companyIndex, 
+        Stage newStage, 
+        string[] ipfsHashes
+    );
     event CompanyUpdated(address indexed vault, uint256 indexed companyIndex);
     event PriceUpdated(uint256 newPrice);
 
@@ -202,7 +207,8 @@ contract NAVEngine is Ownable {
         address vault,
         uint256 companyIndex,
         uint32 newYearsToProduction,
-        uint32 newRemainingMineLife
+        uint32 newRemainingMineLife,
+        string[] calldata ipfsHashes
     ) external {
         if (vaultCreators[vault] != msg.sender && msg.sender != owner()) revert Unauthorized();
         Company storage c = companies[vault][companyIndex];
@@ -217,7 +223,7 @@ contract NAVEngine is Ownable {
             c.yearsToProduction = 0;
         }
         
-        emit CompanyStageAdvanced(vault, companyIndex, c.currentStage);
+        emit CompanyStageAdvanced(vault, companyIndex, c.currentStage, ipfsHashes);
     }
 
     function updateCompany(

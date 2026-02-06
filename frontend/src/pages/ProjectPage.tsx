@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
+import { formatUnits, parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
 import BridgeKitModal from "../components/BridgeKitModal";
 import DistributeProfitModal from "../components/DistributeProfitModal";
-import { formatUnits, parseUnits } from "viem";
 import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
@@ -144,6 +144,68 @@ const IconFee = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+// const IconProfit = (props: React.SVGProps<SVGSVGElement>) => (
+//   <svg
+//     viewBox="0 0 24 24"
+//     fill="none"
+//     stroke="currentColor"
+//     strokeWidth="2"
+//     {...props}
+//   >
+//     <path d="M3 3v18h18" />
+//     <path d="M7 14l4-4 3 3 5-7" />
+//   </svg>
+// );
+
+// const IconClaim = (props: React.SVGProps<SVGSVGElement>) => (
+//   <svg
+//     viewBox="0 0 24 24"
+//     fill="none"
+//     stroke="currentColor"
+//     strokeWidth="2"
+//     {...props}
+//   >
+//     <path d="M21 6H3v12h18V6z" />
+//     <path d="M7 12l3 3 7-7" />
+//   </svg>
+// );
+
+const CompanyBreakdownItem = ({
+  name,
+  weight,
+  colorIndex,
+  vaultAddress,
+  companyIndex,
+}: {
+  name: string;
+  weight: number;
+  colorIndex: number;
+  vaultAddress: string;
+  companyIndex: number;
+}) => {
+  return (
+    <Link
+      to={`/company/${vaultAddress}/${companyIndex}`}
+      className="block w-full rounded bg-stone-800/60 px-3 py-2 transition-all hover:bg-stone-700/80 hover:shadow-lg"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-block h-2 w-2 rounded-sm"
+            style={{
+              backgroundColor: PIE_COLORS[colorIndex % PIE_COLORS.length],
+            }}
+          />
+          <p className="text-left text-sky-200 hover:text-sky-100 transition-colors underline decoration-sky-200/40 underline-offset-2">
+            {name}
+          </p>
+        </div>
+        <p className="text-stone-400">{weight}%</p>
+      </div>
+    </Link>
+  );
+};
+
 const ProjectPage = () => {
   const { address } = useParams<{ address: string }>();
   const { address: account, isConnected } = useAccount();
@@ -155,7 +217,8 @@ const ProjectPage = () => {
   const [loading, setLoading] = useState(false);
   const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
-  const [isDistributeProfitModalOpen, setIsDistributeProfitModalOpen] = useState(false);
+  const [isDistributeProfitModalOpen, setIsDistributeProfitModalOpen] =
+    useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [explorerBaseUrl, setExplorerBaseUrl] = useState(() =>
     sanitizeExplorerUrl(getExplorerUrl()),
@@ -580,23 +643,14 @@ const ProjectPage = () => {
 
               <div className="flex-1 space-y-2 text-[11px]">
                 {project.companyNames.map((name, idx) => (
-                  <div
+                  <CompanyBreakdownItem
                     key={name + idx}
-                    className="flex items-center justify-between rounded bg-stone-800/60 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="inline-block h-2 w-2 rounded-sm"
-                        style={{
-                          backgroundColor: PIE_COLORS[idx % PIE_COLORS.length],
-                        }}
-                      />
-                      <p className="text-stone-100">{name}</p>
-                    </div>
-                    <p className="text-stone-400">
-                      {project.companyWeights[idx]}%
-                    </p>
-                  </div>
+                    name={name}
+                    weight={project.companyWeights[idx]}
+                    colorIndex={idx}
+                    vaultAddress={project.address}
+                    companyIndex={idx}
+                  />
                 ))}
               </div>
             </div>
@@ -731,7 +785,7 @@ const ProjectPage = () => {
                 <p className="mb-2 text-[10px] text-stone-400">
                   Distribute Profit
                 </p>
-                
+
                 <button
                   onClick={() => setIsDistributeProfitModalOpen(true)}
                   disabled={!profitsOpen}

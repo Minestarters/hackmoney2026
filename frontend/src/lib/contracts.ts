@@ -1,12 +1,13 @@
+import { FACTORY_ADDRESS, USDC_ADDRESS, NAV_ENGINE_ADDRESS, START_BLOCK } from "../config";
 import { getContract } from "viem";
-import { FACTORY_ADDRESS, START_BLOCK, USDC_ADDRESS } from "../config";
 import {
   basketVaultAbi,
   erc20Abi,
   minestartersFactoryAbi,
+  navEngineAbi,
 } from "../contracts/abis";
-import { publicClient, type WalletClientWithAccount } from "./wagmi";
-import type { ProjectInfo, UserPosition } from "../types";
+import type { ProjectInfo, UserPosition, CompanyDetails } from "../types";
+import { getWalletClient, publicClient, type WalletClientWithAccount } from "./wagmi";
 import { getProjectsList, getProjectSupporterCount } from "./subgraph";
 
 // Read-only contract getters (use publicClient)
@@ -30,6 +31,26 @@ export const getFactoryRead = () =>
     abi: minestartersFactoryAbi,
     client: publicClient,
   });
+
+export const getNAVEngineContract = () =>
+  getContract({
+    address: NAV_ENGINE_ADDRESS as `0x${string}`,
+    abi: navEngineAbi,
+    client: publicClient,
+  });
+
+export const getNAVEngineWrite = async (
+  walletClient: WalletClientWithAccount,
+  functionName: string,
+  args: Array<any>
+) => {
+  return walletClient.writeContract({
+    address: NAV_ENGINE_ADDRESS as `0x${string}`,
+    abi: navEngineAbi,
+    functionName,
+    args,
+  });
+}
 
 const toBigInt = (value?: number | bigint | null) => {
   if (typeof value === "bigint") return value;
@@ -74,6 +95,35 @@ export const writeFactory = {
         args.deadline,
         args.withdrawAddress,
         args.raiseFeeBps,
+      ],
+    });
+  },
+  createProjectWithNAV: async (
+    walletClient: WalletClientWithAccount,
+    args: {
+      projectName: string;
+      companyNames: string[];
+      companyWeights: bigint[];
+      minimumRaise: bigint;
+      deadline: bigint;
+      withdrawAddress: `0x${string}`;
+      raiseFeeBps: bigint;
+      profitFeeBps: bigint;
+    },
+  ) => {
+    return walletClient.writeContract({
+      address: FACTORY_ADDRESS as `0x${string}`,
+      abi: minestartersFactoryAbi,
+      functionName: "createProjectWithNAV",
+      args: [
+        args.projectName,
+        args.companyNames,
+        args.companyWeights,
+        args.minimumRaise,
+        args.deadline,
+        args.withdrawAddress,
+        args.raiseFeeBps,
+        args.profitFeeBps,
       ],
     });
   },
@@ -376,4 +426,62 @@ export const fetchProjectAddresses = async (): Promise<`0x${string}`[]> => {
     }
     return addresses;
   }
+};
+
+export const fetchCompanyDetails = async (
+  vaultAddress: string,
+  companyIndex: number,
+): Promise<Partial<CompanyDetails>> => {
+  const navEngine = getNAVEngineContract();
+  const result = await navEngine.read.getCompany([vaultAddress, companyIndex]) as Array<string | bigint>;
+
+  return {
+    name: result[0] as string,
+    weight: Number(result[1]),
+    resourceTonnes: result[2] as bigint,
+    inventoryTonnes: result[3] as bigint,
+    stage: Number(result[4]),
+    navUsd: result[5] as bigint,
+    //   totalResourceTonnes: 0n,
+    //   recoveryRateBps: 0,
+    //   yearsToProduction: 0,
+    //   remainingMineLife: 0,
+    //   discountRateBps: 0,
+    //   floorNavTotalUsd: 0n,
+  }
+};
+
+/**
+ * Advance a company to the next stage
+ * @param vaultAddress - The address of the vault/project
+ * @param companyIndex - The index of the company within the vault
+ * @param yearsToProduction - Years until production starts
+ * @param remainingMineLife - Remaining mine life in years
+ * @param signer - The signer to execute the transaction
+ */
+export const advanceCompanyStage = async (
+  vaultAddress: string,
+  companyIndex: number,
+  yearsToProduction: number,
+  remainingMineLife: number,
+  ipfsHashes: string[] = [],
+): Promise<string | undefined> => {
+  const walletClient = await getWalletClient();
+
+  if (!walletClient) return
+
+  // Call advanceCompanyStage on the NAVEngine contract
+  const hash = await getNAVEngineWrite(
+    walletClient,
+    'advanceCompanyStage',
+    [
+      vaultAddress,
+      companyIndex,
+      yearsToProduction,
+      remainingMineLife,
+      ipfsHashes
+    ]
+  );
+  return hash
+
 };

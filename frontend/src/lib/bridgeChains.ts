@@ -76,3 +76,13 @@ export const BRIDGEKIT_SUPPORTED_TESTNETS = BRIDGEKIT_SUPPORTED_CHAINS.filter(
 );
 
 export type ChainInfo = typeof BRIDGEKIT_SUPPORTED_TESTNETS[number];
+
+export const getChainNameAndRPC = (
+  chainId: number,
+): { name: string; rpc: string } | null => {
+  const chain = BRIDGEKIT_SUPPORTED_CHAINS.find((c) => c.chainId === chainId);
+  if (chain) {
+    return { name: chain.name, rpc: chain.rpcEndpoints[0] };
+  }
+  return null;
+};

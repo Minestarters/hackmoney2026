@@ -14,7 +14,7 @@ import { formatUsdc } from "../lib/format";
 import { minestartersDistributor } from "../contracts/abis";
 import { subgraphQuery } from "../lib/subgraph";
 import type { ProjectInfo } from "../types";
-import { BRIDGEKIT_SUPPORTED_CHAINS, getChainIcon } from "../lib/bridgeChains";
+import { BRIDGEKIT_SUPPORTED_CHAINS, getChainIcon, getChainNameAndRPC } from "../lib/bridgeChains";
 
 type DistributionStep = "amount" | "breakdown" | "bridge" | "payout";
 
@@ -54,16 +54,6 @@ const getUsdcAddressByChainId = (chainId: number): string | null => {
     BRIDGEKIT_SUPPORTED_CHAINS.find((chain) => chainId === chain.chainId)
       ?.usdcAddress || null
   );
-};
-
-const getChainNameAndRPC = (
-  chainId: number,
-): { name: string; rpc: string } | null => {
-  const chain = BRIDGEKIT_SUPPORTED_CHAINS.find((c) => c.chainId === chainId);
-  if (chain) {
-    return { name: chain.name, rpc: chain.rpcEndpoints[0] };
-  }
-  return null;
 };
 
 const DistributeProfitModal = ({

@@ -873,7 +873,7 @@ const CreateProjectPage = () => {
         return;
       }
 
-      const hash = await writeFactory.createProject(walletClient, {
+      const hash = await writeFactory.createProjectWithNAV(walletClient, {
         projectName: localFormFields.projectName,
         companyNames: companiesForSubmit.map((c) => c.name),
         companyWeights: companiesForSubmit.map((c) => BigInt(c.weight)),
@@ -881,6 +881,7 @@ const CreateProjectPage = () => {
         deadline: BigInt(deadlineTs),
         withdrawAddress: (localFormFields.withdrawAddress || account) as `0x${string}`,
         raiseFeeBps: BigInt(raiseFeeBps),
+        profitFeeBps: BigInt(profitFeeBps)
       });
 
       await publicClient.waitForTransactionReceipt({ hash });

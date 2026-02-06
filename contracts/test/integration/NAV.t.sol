@@ -79,7 +79,7 @@ contract NAVIntegrationTest is Test {
 
         // stage 1 permits
         vm.prank(creator);
-        navEngine.advanceCompanyStage(vaultAddr, 0, 4, 20);  // 4 years to production, 20 year mine life
+        navEngine.advanceCompanyStage(vaultAddr, 0, 4, 20, new string[](0));  // 4 years to production, 20 year mine life
 
         (,,,, stage,) = navEngine.getCompany(vaultAddr, 0);
         assertEq(uint8(stage), 1);  // permits
@@ -92,7 +92,7 @@ contract NAVIntegrationTest is Test {
 
         // stage 2 construction
         vm.prank(creator);
-        navEngine.advanceCompanyStage(vaultAddr, 0, 2, 20);  // 2 years to production
+        navEngine.advanceCompanyStage(vaultAddr, 0, 2, 20, new string[](0));  // 2 years to production
 
         (,,,, stage,) = navEngine.getCompany(vaultAddr, 0);
         assertEq(uint8(stage), 2);  // construction
@@ -105,7 +105,7 @@ contract NAVIntegrationTest is Test {
 
         // stage 3 production
         vm.prank(creator);
-        navEngine.advanceCompanyStage(vaultAddr, 0, 0, 18);  // production started, 18 years remaining
+        navEngine.advanceCompanyStage(vaultAddr, 0, 0, 18, new string[](0));  // production started, 18 years remaining
 
         (,,,, stage,) = navEngine.getCompany(vaultAddr, 0);
         assertEq(uint8(stage), 3);  // production
@@ -160,15 +160,15 @@ contract NAVIntegrationTest is Test {
         (,,,,, navByStage[0]) = navEngine.getCompany(vaultAddr, 0);
 
         vm.prank(creator);
-        navEngine.advanceCompanyStage(vaultAddr, 0, 3, 15);
+        navEngine.advanceCompanyStage(vaultAddr, 0, 3, 15, new string[](0));
         (,,,,, navByStage[1]) = navEngine.getCompany(vaultAddr, 0);
 
         vm.prank(creator);
-        navEngine.advanceCompanyStage(vaultAddr, 0, 3, 15);
+        navEngine.advanceCompanyStage(vaultAddr, 0, 3, 15, new string[](0));
         (,,,,, navByStage[2]) = navEngine.getCompany(vaultAddr, 0);
 
         vm.prank(creator);
-        navEngine.advanceCompanyStage(vaultAddr, 0, 3, 15);
+        navEngine.advanceCompanyStage(vaultAddr, 0, 3, 15, new string[](0));
         (,,,,, navByStage[3]) = navEngine.getCompany(vaultAddr, 0);
 
         assertEq(navByStage[0], 10_000e6);

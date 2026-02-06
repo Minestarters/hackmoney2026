@@ -1,8 +1,13 @@
-export const FACTORY_ADDRESS = "0x523faDa2A3ee98D8069928c3CB5aB94bb65e91A8";
-export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
-export const RPC_URL = "https://rpc.testnet.arc.network";
+export const FACTORY_ADDRESS = import.meta.env.VITE_FACTORY_ADDRESS || "";
+export const USDC_ADDRESS = import.meta.env.VITE_USDC_ADDRESS || "";
+export const NAV_ENGINE_ADDRESS = import.meta.env.VITE_NAV_ENGINE_ADDRESS || "";
+export const RPC_URL = import.meta.env.VITE_RPC_URL || "http://localhost:8545";
 export const EXPLORER_URL = import.meta.env.VITE_EXPLORER_URL || "";
-export const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1740165/minestarters-hackmoney/version/latest";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+export const IPFS_GATEWAY_URL = import.meta.env.VITE_IPFS_GATEWAY_URL;
+
+export const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1740729/hackmoney-2026/version/latest";
+
 export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
 export const YELLOW_WS_URL =
   import.meta.env.VITE_YELLOW_WS_URL || "wss://clearnet.yellow.com/ws";

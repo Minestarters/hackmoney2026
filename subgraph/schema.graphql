@@ -21,3 +21,60 @@ type Holder @entity {
   balance: BigInt!
   initialDepositChain: BigInt!
 }
+
+
+type CompanyRegistered @entity(immutable: true) {
+  id: Bytes!
+  vault: Bytes! # address
+  companyIndex: BigInt! # uint256
+  name: String! # string
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type CompanyStageAdvanced @entity(immutable: true) {
+  id: Bytes!
+  vault: Bytes! # address
+  companyIndex: BigInt! # uint256
+  newStage: Int! # uint8
+  ipfsHashes: [String!]! # string[]
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type CompanyUpdated @entity(immutable: true) {
+  id: Bytes!
+  vault: Bytes! # address
+  companyIndex: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type OwnershipTransferred @entity(immutable: true) {
+  id: Bytes!
+  previousOwner: Bytes! # address
+  newOwner: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type PriceUpdated @entity(immutable: true) {
+  id: Bytes!
+  newPrice: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type VaultRegistered @entity(immutable: true) {
+  id: Bytes!
+  vault: Bytes! # address
+  tokenSupply: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
