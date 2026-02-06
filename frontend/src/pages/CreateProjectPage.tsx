@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseUnits } from "viem";
-import { useConnect, useConnection } from "wagmi";
+import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { FACTORY_ADDRESS } from "../config";
 import { getWalletClient, publicClient } from "../lib/wagmi";
@@ -72,18 +72,8 @@ const shortAddress = (addr: string) =>
   addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
 
 const CreateProjectPage = () => {
-  const { signer, connect, account } = useWallet();
-  const [projectName, setProjectName] = useState("");
-  const [minimumRaise, setMinimumRaise] = useState("1000");
-  const [deadline, setDeadline] = useState(() =>
-    toDateInputValue(addDays(new Date(), 30)),
-  );
-  const [raiseFeePct, setRaiseFeePct] = useState("0.05");
-  const [withdrawAddress, setWithdrawAddress] = useState("");
-  const [companies, setCompanies] = useState<CompanyInput[]>([
-    { name: "Company A", weight: 50 },
-    { name: "Company B", weight: 50 },
-  ]);
+  const { address: account, isConnected } = useAccount();
+  const { connect } = useConnect();
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -232,18 +222,6 @@ const CreateProjectPage = () => {
     };
   }, []);
 
-  const handleCompanyChange = (
-    index: number,
-    field: keyof CompanyInput,
-    value: string,
-  ) => {
-    setCompanies((prev) =>
-      prev.map((entry, i) =>
-        i === index
-          ? { ...entry, [field]: field === "weight" ? Number(value) : value }
-          : entry,
-      ),
-    );
   const startJoinerPolling = (code: string) => {
     clearJoinerPoll();
     setIsWaitingForJoiner(true);
@@ -699,7 +677,7 @@ const CreateProjectPage = () => {
     }
 
     if (!isConnected) {
-      mutate({ connector: injected() });
+      connect({ connector: injected() });
       setDeploymentTriggered(false);
       return;
     }
@@ -793,7 +771,7 @@ const CreateProjectPage = () => {
     }
 
     if (!isConnected) {
-      mutate({ connector: injected() });
+      connect({ connector: injected() });
       return;
     }
 
@@ -878,7 +856,7 @@ const CreateProjectPage = () => {
     }
 
     if (!isConnected) {
-      mutate({ connector: injected() });
+      connect({ connector: injected() });
       return;
     }
 
@@ -890,13 +868,6 @@ const CreateProjectPage = () => {
 
     try {
       setSubmitting(true);
-      const factory = new Contract(
-        FACTORY_ADDRESS,
-        minestartersFactoryAbi,
-        signer,
-      );
-      const minRaise = parseUnits(minimumRaise || "0", 6);
-      const deadlineTs = dateInputValueToUnixSeconds(deadline);
       const minRaise = parseUnits(localFormFields.minimumRaise || "0", 6);
       const deadlineTs = dateInputValueToUnixSeconds(localFormFields.deadline);
       if (!Number.isFinite(deadlineTs)) {
@@ -904,27 +875,15 @@ const CreateProjectPage = () => {
         setSubmitting(false);
         return;
       }
-      const raiseFeeBps = Math.round(
-        (parseFloat(raiseFeePct || "0") || 0) * 100,
-      );
       const raiseFeeBps = Math.round((parseFloat(localFormFields.raiseFeePct || "0") || 0) * 100);
       const profitFeeBps = Math.round((parseFloat(localFormFields.profitFeePct || "0") || 0) * 100);
 
-      if (raiseFeeBps > 10_000) {
+      if (raiseFeeBps > 10_000 || profitFeeBps > 10_000) {
         setMessage("Fees cannot exceed 100%");
         setSubmitting(false);
         return;
       }
 
-      const tx = await factory.createProject(
-        projectName,
-        companies.map((c) => c.name),
-        companies.map((c) => c.weight),
-        minRaise,
-        deadlineTs,
-        withdrawAddress,
-        raiseFeeBps,
-      );
       const hash = await writeFactory.createProject(walletClient, {
         projectName: localFormFields.projectName,
         companyNames: companiesForSubmit.map((c) => c.name),
@@ -966,95 +925,6 @@ const CreateProjectPage = () => {
   return (
     <div className="card-frame rounded-lg p-6">
       <h1 className="mb-4 text-lg text-sky-200">Create a project</h1>
-      <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="space-y-2">
-            <span className="text-stone-300">Project name</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              required
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Withdraw address</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              value={withdrawAddress}
-              onChange={(e) => setWithdrawAddress(e.target.value)}
-              required
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Minimum raise (USDC)</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              value={minimumRaise}
-              onChange={(e) => setMinimumRaise(e.target.value)}
-              type="number"
-              min="0"
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Deadline</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-              min={toDateInputValue(new Date())}
-              required
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-stone-300">Raise fee (%)</span>
-            <input
-              className="input-blocky w-full rounded px-3 py-2"
-              type="number"
-              step="0.01"
-              value={raiseFeePct}
-              onChange={(e) => setRaiseFeePct(e.target.value)}
-              min="0"
-              max="100"
-            />
-          </label>
-        </div>
-
-        <div className="rounded border-4 border-dirt p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-stone-300">Companies & weights</p>
-            <button
-              type="button"
-              onClick={addCompanyRow}
-              className="button-blocky rounded px-3 py-1"
-            >
-              Add Row
-            </button>
-          </div>
-          <div className="space-y-2">
-            {companies.map((company, idx) => (
-              <div key={idx} className="grid grid-cols-6 gap-2">
-                <input
-                  className="input-blocky col-span-4 rounded px-3 py-2"
-                  value={company.name}
-                  onChange={(e) =>
-                    handleCompanyChange(idx, "name", e.target.value)
-                  }
-                  placeholder={`Company ${idx + 1}`}
-                  required
-                />
-                <input
-                  className="input-blocky col-span-2 rounded px-3 py-2"
-                  type="number"
-                  value={company.weight}
-                  min="0"
-                  max="100"
-                  onChange={(e) =>
-                    handleCompanyChange(idx, "weight", e.target.value)
-                  }
-                  required
-                />
 
       {/* Yellow Session UI */}
       <div className="mb-6 rounded-lg bg-stone-900/50 p-5 text-sm">
@@ -1406,11 +1276,6 @@ const CreateProjectPage = () => {
               <p key={`${line}-${idx}`}>{line}</p>
             ))}
           </div>
-          <p className="mt-2 text-[10px] text-stone-400">
-            Weights must sum to 100%. Fees entered as percentages (e.g. 2.5 =
-            2.5% = 250 bps).
-          </p>
-        </div>
         )}
       </div>
 

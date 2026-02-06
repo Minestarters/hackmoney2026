@@ -7,8 +7,9 @@ import {
   type BridgeChainIdentifier,
 } from "@circle-fin/bridge-kit";
 import { createEthersAdapterFromProvider } from "@circle-fin/adapter-ethers-v6";
+import { useAccount, useConnect } from "wagmi";
+import { injected } from "wagmi/connectors";
 import { DISTRIBUTOR_ADDRESSES } from "../config";
-import { useWallet } from "../context/WalletContext";
 import { formatUsdc } from "../lib/format";
 import { minestartersDistributor } from "../contracts/abis";
 import { subgraphQuery } from "../lib/subgraph";
@@ -70,7 +71,8 @@ const DistributeProfitModal = ({
   onClose,
   project,
 }: DistributeProfitModalProps) => {
-  const { signer, connect } = useWallet();
+  const { isConnected } = useAccount();
+  const { connect } = useConnect();
 
   const [step, setStep] = useState<DistributionStep>("amount");
   const [amount, setAmount] = useState("");
@@ -103,8 +105,8 @@ const DistributeProfitModal = ({
       return;
     }
 
-    if (!signer) {
-      await connect();
+    if (!isConnected) {
+      connect({ connector: injected() });
       return;
     }
 
@@ -320,8 +322,8 @@ const DistributeProfitModal = ({
   };
 
   const handleBatchPayout = async (chainId: string) => {
-    if (!signer) {
-      await connect();
+    if (!isConnected) {
+      connect({ connector: injected() });
       return;
     }
 

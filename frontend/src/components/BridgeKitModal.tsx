@@ -37,8 +37,9 @@ import {
   getChainIcon,
   type ChainInfo,
 } from "../lib/bridgeChains";
+import { useAccount, useConnect } from "wagmi";
+import { injected } from "wagmi/connectors";
 import { USDC_ADDRESS, ARC_TESTNET_CHAIN_ID } from "../config";
-import { useWallet } from "../context/WalletContext";
 import type { ProjectInfo } from "../types";
 
 export type BridgeMode = "before" | "after";
@@ -125,7 +126,8 @@ const BridgeKitModal = ({
   onContinue,
   onContractMethod,
 }: BridgeKitModalProps) => {
-  const { signer, connect } = useWallet();
+  const { isConnected } = useAccount();
+  const { connect } = useConnect();
 
   // Find Arc Testnet as default chain
   const defaultChain =
@@ -197,8 +199,8 @@ const BridgeKitModal = ({
   const handleDeposit = async (chainOverride?: ChainInfo) => {
     const chain = chainOverride || selectedChain;
 
-    if (!signer) {
-      await connect();
+    if (!isConnected) {
+      connect({ connector: injected() });
       return;
     }
 

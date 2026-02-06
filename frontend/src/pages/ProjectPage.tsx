@@ -10,6 +10,7 @@ import { injected } from "wagmi/connectors";
 import {
   EXPLORER_URL,
   STAGE_LABELS,
+  USDC_ADDRESS,
   getExplorerUrl,
 } from "../config";
 import {
@@ -193,10 +194,9 @@ const ProjectPage = () => {
 
     try {
       const projectAddress = address as `0x${string}`;
-      const [info, supporters, claimedTotal] = await Promise.all([
+      const [info, supporters] = await Promise.all([
         fetchProjectInfo(projectAddress),
         fetchSupporterCount(projectAddress),
-        fetchTotalClaimed(projectAddress),
       ]);
 
       setProject(info);
@@ -266,12 +266,28 @@ const ProjectPage = () => {
     amountStr: string,
     chainId: number | bigint,
   ) => {
-    if (!project || !signer) return;
+    if (!project || !account) return;
+    if (!isConnected) {
+      connect({ connector: injected() });
+      return;
+    }
+    if (project.stage === 2) {
+      toast.error("Fundraise closed");
+      return;
+    }
+    if (!USDC_ADDRESS) {
+      toast.error("Set VITE_USDC_ADDRESS for deposits");
+      return;
+    }
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      toast.error("Could not get wallet");
+      return;
+    }
 
     const value = parseUnits(amountStr || "0", 6);
-    const usdc = getUsdc(signer);
-    const owner = await signer.getAddress();
-    const balance: bigint = await usdc.balanceOf(owner);
+    const usdcRead = getUsdcRead();
+    const balance = await usdcRead.read.balanceOf([account]);
 
     if (balance < value) {
       const msg = `Insufficient USDC balance. You have ${formatUsdc(balance)} but need ${formatUsdc(value)}`;
@@ -279,10 +295,20 @@ const ProjectPage = () => {
       throw new Error(msg);
     }
 
-    const allowance: bigint = await usdc.allowance(owner, project.address);
+    const allowance = await usdcRead.read.allowance([
+      account,
+      project.address as `0x${string}`,
+    ]);
     if (allowance < value) {
       await toast.promise(
-        usdc.approve(project.address, value).then((tx) => tx.wait()),
+        (async () => {
+          const hash = await writeUsdc.approve(
+            walletClient,
+            project.address as `0x${string}`,
+            value,
+          );
+          await publicClient.waitForTransactionReceipt({ hash });
+        })(),
         {
           loading: "Approving USDC...",
           success: "USDC approved",
@@ -294,9 +320,16 @@ const ProjectPage = () => {
       );
     }
 
-    const vault = getVault(project.address, signer);
     await toast.promise(
-      vault.deposit(value, chainId).then((tx) => tx.wait()),
+      (async () => {
+        const hash = await writeVault.deposit(
+          walletClient,
+          project.address as `0x${string}`,
+          value,
+          chainId,
+        );
+        await publicClient.waitForTransactionReceipt({ hash });
+      })(),
       {
         loading: "Depositing...",
         success: "Deposit confirmed",
@@ -349,10 +382,24 @@ const ProjectPage = () => {
   };
 
   const handleWithdrawContract = async () => {
-    if (!project || !signer) return;
-    const vault = getVault(project.address, signer);
+    if (!project || !account) return;
+    if (!isConnected) {
+      connect({ connector: injected() });
+      return;
+    }
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      toast.error("Could not get wallet");
+      return;
+    }
     await toast.promise(
-      vault.withdrawRaisedFunds().then((tx) => tx.wait()),
+      (async () => {
+        const hash = await writeVault.withdrawRaisedFunds(
+          walletClient,
+          project.address as `0x${string}`,
+        );
+        await publicClient.waitForTransactionReceipt({ hash });
+      })(),
       {
         loading: "Withdrawing raised funds...",
         success: "Raised funds withdrawn",
