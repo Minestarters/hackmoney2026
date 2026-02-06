@@ -8,7 +8,7 @@ Junior mining exploration is structurally underfunded. Even with stronger commod
 
 The path from discovery (exploration) to feasibility, permitting, project finance, construction, and production is long and capital-intensive. Until production, in-ground mineral assets are non-producing, non-cash-flowing, and largely illiquid. That illiquidity drives valuation discounts during exploration and development, raises the cost of capital, and limits funding access. Early investors are locked in for years with no ability to trade, rebalance, or exit before long-term milestones are reached.
 
-### Enter Minestarters
+### Enter Minestarters 
 
 - Collaborative basket curation: Curators (researchers, mining creators, junior executives, or Minestarters) assemble baskets of projects, set allocation weights, and define minimum raise targets. Investors gain diversified exposure by backing expert-led strategies rather than individual high-risk projects. Curators stake tokens to collectively assign weights to projects inside a basket using Yellow Network, enabling fast, gasless, multi-party curation with on-chain settlement only once the basket is finalized.
 
