@@ -268,8 +268,13 @@ export const advanceCompanyStage = async (
   companyIndex: number,
   yearsToProduction: number,
   remainingMineLife: number,
-  signer: Signer
-): Promise<any> => {
+  signer: Signer,
+  ipfsHashes: string[] = []
+): Promise<{
+  transactionHash: string,
+  blockNumber: number,
+  status: "success" | "failed"
+}> => {
   if (!NAV_ENGINE_ADDRESS) {
     throw new Error("NAV Engine address not configured");
   }
@@ -281,7 +286,8 @@ export const advanceCompanyStage = async (
     vaultAddress,
     companyIndex,
     yearsToProduction,
-    remainingMineLife
+    remainingMineLife,
+    ipfsHashes
   );
 
   // Wait for transaction to be mined

@@ -4,6 +4,10 @@ export const NAV_ENGINE_ADDRESS = import.meta.env.VITE_NAV_ENGINE_ADDRESS || "";
 export const RPC_URL = import.meta.env.VITE_RPC_URL || "http://localhost:8545";
 export const EXPLORER_URL = import.meta.env.VITE_EXPLORER_URL || "";
 export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+export const IPFS_GATEWAY_URL = import.meta.env.VITE_IPFS_GATEWAY_URL;
+
+export const SUBGRAPH_URL = import.meta.env.VITE_SUBGRAPH_URL;
 
 const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",

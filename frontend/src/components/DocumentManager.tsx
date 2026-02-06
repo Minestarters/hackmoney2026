@@ -2,62 +2,62 @@ import { useState, useRef } from "react";
 import toast from "react-hot-toast";
 import { COMPANY_STAGE_LABELS } from "../types";
 import type { CompanyDocument } from "../types";
+import { API_BASE_URL } from "../config";
 import { PDFViewer } from "./PDFViewer";
 
 interface DocumentManagerProps {
-  companyIndex: number;
-  companyName: string;
   currentStage: number;
   documents: CompanyDocument[];
-  onAddDocument: (file: File) => Promise<void>;
-  onDeleteDocument: (documentId: string) => Promise<void>;
+  pendingFiles?: File[];
+  onAddDocuments?: (files: File[]) => void;
+  onRemovePendingFile?: (fileName: string) => void;
+  onDeleteDocument?: (documentId: string) => Promise<void>;
   onSubmit?: () => Promise<void>;
   isSubmitting?: boolean;
 }
 
 export const DocumentManager = ({
-  companyIndex,
-  companyName,
   currentStage,
   documents,
-  onAddDocument,
+  pendingFiles = [],
+  onAddDocuments,
+  onRemovePendingFile,
   onDeleteDocument,
   onSubmit,
   isSubmitting = false,
 }: DocumentManagerProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<CompanyDocument | null>(null);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    // Validate file type
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      toast.error("Only PDF files are allowed");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
+    const validFiles: File[] = [];
+
+    // Validate all files
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      // Validate file type
+      if (!file.name.toLowerCase().endsWith(".pdf")) {
+        toast.error(`${file.name}: Only PDF files are allowed`);
+        continue;
+      }
+
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name}: File size must be less than 10MB`);
+        continue;
+      }
+
+      validFiles.push(file);
     }
 
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("File size must be less than 10MB");
+    if (validFiles.length > 0) {
+      onAddDocuments?.(validFiles);
+      toast.success(`${validFiles.length} file(s) selected for upload`);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    setUploading(true);
-    try {
-      await onAddDocument(file);
-      toast.success("Document uploaded successfully");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to upload document";
-      toast.error(message);
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -65,7 +65,7 @@ export const DocumentManager = ({
     if (!confirm("Are you sure you want to delete this document?")) return;
 
     try {
-      await onDeleteDocument(documentId);
+      await onDeleteDocument?.(documentId);
       toast.success("Document deleted successfully");
     } catch (error) {
       const message =
@@ -74,18 +74,23 @@ export const DocumentManager = ({
     }
   };
 
-  const stageDocuments = documents.filter((doc) => doc.stage === currentStage);
-  const otherStageDocuments = documents.filter(
-    (doc) => doc.stage !== currentStage,
+  const stageDocuments = documents.filter(
+    (doc) => doc.closedStage === undefined || doc.closedStage >= currentStage,
+  );
+  const completedStageDocuments = documents.filter(
+    (doc) => doc.closedStage !== undefined && doc.closedStage < currentStage,
   );
 
-  // Create a mock URL for preview (in real app, this would be the actual file URL)
+  // Create a preview URL for the document
   const getPreviewUrl = (doc: CompanyDocument): string => {
     if (doc.localPath) {
       return `file://${doc.localPath}`;
     }
-    // For IPFS or other URLs
-    return doc.ipfsHash || "";
+    // For IPFS documents, use the server gateway endpoint
+    if (doc.ipfsHash) {
+      return `${API_BASE_URL}/${doc.ipfsHash}`;
+    }
+    return "";
   };
 
   return (
@@ -99,6 +104,106 @@ export const DocumentManager = ({
         </p>
       </div>
 
+      {/* Pre-uploaded Documents Section */}
+      {(stageDocuments.length > 0 || completedStageDocuments.length > 0) && (
+        <>
+          {/* Current Stage Documents */}
+          {stageDocuments.length > 0 && (
+            <div className="mb-4">
+              <h4 className="mb-2 text-xs font-semibold text-stone-300">
+                {COMPANY_STAGE_LABELS[currentStage]} Documents (
+                {stageDocuments.length})
+              </h4>
+              <div className="space-y-2">
+                {stageDocuments.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="flex items-center justify-between rounded bg-stone-800 p-3"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate text-xs font-medium text-sky-100">
+                        {doc.fileName ||
+                          `IPFS: ${doc.ipfsHash?.slice(0, 16) || "Unknown"}...`}
+                      </p>
+                      <p className="text-xs text-stone-400">
+                        {new Date(doc.uploadedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="ml-3 flex gap-2">
+                      {doc.ipfsHash && (
+                        <button
+                          onClick={() => setPreviewDoc(doc)}
+                          className="rounded bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700 transition-colors"
+                          title="Preview PDF"
+                        >
+                          View
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDelete(doc.id)}
+                        className="rounded bg-red-600/80 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 transition-colors"
+                        title="Delete document"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Completed Stage Documents */}
+          {completedStageDocuments.length > 0 && (
+            <div className="mb-4">
+              <h4 className="mb-2 text-xs font-semibold text-emerald-400">
+                ✓ Closed Stages Documentation ({completedStageDocuments.length})
+              </h4>
+              <div className="space-y-2">
+                {completedStageDocuments.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="flex items-center justify-between rounded bg-emerald-900/30 border border-emerald-700/40 p-3"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-xs font-medium text-emerald-200">
+                          {doc.fileName ||
+                            `IPFS: ${doc.ipfsHash?.slice(0, 16) || "Unknown"}...`}
+                        </p>
+                        <span className="shrink-0 inline-block rounded-full bg-emerald-600/40 px-2 py-0.5 text-[10px] font-semibold text-emerald-100">
+                          Closed {COMPANY_STAGE_LABELS[doc.closedStage]}
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone-500">
+                        {doc.stage
+                          ? COMPANY_STAGE_LABELS[doc.stage]
+                          : "Unknown stage"}{" "}
+                        • {new Date(doc.uploadedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {doc.ipfsHash && (
+                        <button
+                          onClick={() => setPreviewDoc(doc)}
+                          className="rounded bg-emerald-700/60 px-2 py-1 text-xs font-medium text-emerald-100 hover:bg-emerald-700 transition-colors"
+                          title="Preview PDF"
+                        >
+                          View
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="my-6 border-t border-stone-700/60" />
+        </>
+      )}
+
       {/* Upload Section */}
       <div className="mb-6">
         <label className="flex cursor-pointer items-center justify-center rounded border-2 border-dashed border-stone-600 p-6 hover:border-sky-400 hover:bg-stone-800/30 transition-colors">
@@ -106,8 +211,8 @@ export const DocumentManager = ({
             ref={fileInputRef}
             type="file"
             accept=".pdf"
+            multiple
             onChange={handleFileSelect}
-            disabled={uploading}
             className="hidden"
           />
           <div className="text-center">
@@ -125,90 +230,38 @@ export const DocumentManager = ({
               />
             </svg>
             <p className="text-xs font-medium text-stone-200">
-              {uploading ? "Uploading..." : "Click to upload or drag PDF files"}
+              Click to upload or drag PDF files
             </p>
-            <p className="text-xs text-stone-500">Max 10MB</p>
+            <p className="text-xs text-stone-500">Max 10MB per file</p>
           </div>
         </label>
       </div>
 
-      {/* Current Stage Documents */}
-      <div className="mb-4">
-        <h4 className="mb-2 text-xs font-semibold text-stone-300">
-          {COMPANY_STAGE_LABELS[currentStage]} Documents (
-          {stageDocuments.length})
-        </h4>
-
-        {stageDocuments.length === 0 ? (
-          <p className="text-xs text-stone-400">No documents uploaded yet</p>
-        ) : (
-          <div className="space-y-2">
-            {stageDocuments.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex items-center justify-between rounded bg-stone-800 p-3"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="truncate text-xs font-medium text-sky-100">
-                    {doc.fileName}
-                  </p>
-                  <p className="text-xs text-stone-400">
-                    {new Date(doc.uploadedAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="ml-3 flex gap-2">
-                  <button
-                    onClick={() => setPreviewDoc(doc)}
-                    className="rounded bg-sky-600 px-2 py-1 text-xs font-medium text-white hover:bg-sky-700 transition-colors"
-                    title="Preview PDF"
-                  >
-                    View
-                  </button>
-                  <button
-                    onClick={() => handleDelete(doc.id)}
-                    className="rounded bg-red-600/80 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 transition-colors"
-                    title="Delete document"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Other Stage Documents */}
-      {otherStageDocuments.length > 0 && (
-        <div>
-          <h4 className="mb-2 text-xs font-semibold text-stone-300">
-            Previous Stage Documents ({otherStageDocuments.length})
+      {/* Pending Files Section */}
+      {pendingFiles.length > 0 && (
+        <div className="mb-6 rounded bg-amber-900/30 border border-amber-700/40 p-3">
+          <h4 className="mb-2 text-xs font-semibold text-amber-300">
+            📋 Pending Upload ({pendingFiles.length})
           </h4>
           <div className="space-y-2">
-            {otherStageDocuments.map((doc) => (
+            {pendingFiles.map((file) => (
               <div
-                key={doc.id}
-                className="flex items-center justify-between rounded bg-stone-800/50 p-3"
+                key={file.name}
+                className="flex items-center justify-between rounded bg-stone-800/50 p-2"
               >
-                <div className="flex-1 min-w-0">
-                  <p className="truncate text-xs font-medium text-stone-300">
-                    {doc.fileName}
-                  </p>
-                  <p className="text-xs text-stone-500">
-                    {COMPANY_STAGE_LABELS[doc.stage]} •{" "}
-                    {new Date(doc.uploadedAt).toLocaleDateString()}
-                  </p>
-                </div>
+                <p className="text-xs text-amber-100">{file.name}</p>
                 <button
-                  onClick={() => setPreviewDoc(doc)}
-                  className="ml-3 rounded bg-stone-700 px-2 py-1 text-xs font-medium text-stone-200 hover:bg-stone-600 transition-colors"
-                  title="Preview PDF"
+                  onClick={() => onRemovePendingFile?.(file.name)}
+                  className="rounded bg-red-600/60 px-2 py-1 text-xs font-medium text-red-100 hover:bg-red-700 transition-colors"
                 >
-                  View
+                  Remove
                 </button>
               </div>
             ))}
           </div>
+          <p className="mt-2 text-xs text-amber-200">
+            Files will be uploaded when you click Submit
+          </p>
         </div>
       )}
 
@@ -221,35 +274,18 @@ export const DocumentManager = ({
         />
       )}
 
-      {/* Submit Button - Always shown, disabled if no documents or submitting */}
+      {/* Submit Button - Always shown, disabled if submitting */}
       {onSubmit && (
         <div className="mt-6 flex gap-3">
           <button
-            onClick={onSubmit}
-            disabled={stageDocuments.length === 0 || isSubmitting}
+            onClick={() => onSubmit()}
+            disabled={isSubmitting}
             className="flex-1 rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-stone-600 disabled:text-stone-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {isSubmitting ? (
               <>
                 <div className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-emerald-200" />
                 Submitting...
-              </>
-            ) : stageDocuments.length === 0 ? (
-              <>
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 9v2m0 4v2m0-6a4 4 0 11-8 0 4 4 0 018 0z"
-                  />
-                </svg>
-                Add Documents to Submit
               </>
             ) : (
               <>
@@ -263,7 +299,7 @@ export const DocumentManager = ({
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M5 13l4 4L19 7"
+                    d="M12 9v2m0 4v2m0-6a4 4 0 11-8 0 4 4 0 018 0z"
                   />
                 </svg>
                 Submit Documents & Advance Stage

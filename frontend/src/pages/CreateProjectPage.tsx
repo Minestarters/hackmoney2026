@@ -100,7 +100,7 @@ const CreateProjectPage = () => {
         return;
       }
 
-      const tx = await factory.createProject(
+      const tx = await factory.createProjectWithNAV(
         projectName,
         companies.map((c) => c.name),
         companies.map((c) => c.weight),

@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 
 interface PDFViewerProps {
   fileUrl: string;
-  fileName: string;
+  fileName?: string; // Optional since historical documents may only have hash
   onClose: () => void;
 }
 
@@ -49,7 +49,7 @@ export const PDFViewer = ({ fileUrl, fileName, onClose }: PDFViewerProps) => {
     const link = document.createElement("a");
     // For local files, we still attempt download with the path
     link.href = fileUrl;
-    link.download = fileName;
+    link.download = fileName || "document.pdf";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -63,7 +63,7 @@ export const PDFViewer = ({ fileUrl, fileName, onClose }: PDFViewerProps) => {
         <div className="flex items-center justify-between border-b border-stone-700 bg-stone-800/50 p-4">
           <div className="flex-1 min-w-0">
             <h3 className="truncate text-sm font-semibold text-stone-100">
-              {fileName}
+              {fileName || "Document"}
             </h3>
           </div>
           <div className="ml-4 flex gap-2">
@@ -111,7 +111,7 @@ export const PDFViewer = ({ fileUrl, fileName, onClose }: PDFViewerProps) => {
               ref={iframeRef}
               src={fileUrl}
               className="h-full w-full"
-              title={fileName}
+              title={fileName || "Document Viewer"}
               onLoad={handleIframeLoad}
               onError={handleIframeError}
             />

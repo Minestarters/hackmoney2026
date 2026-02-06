@@ -7,7 +7,8 @@
   "packageManager": "yarn@1.22.22",
   "workspaces": [
     "contracts",
-    "frontend"
+    "frontend",
+    "server"
   ],
   "scripts": {
     "contracts:compile": "yarn workspace @hackmoney2026/contracts compile",
@@ -18,7 +19,10 @@
     "frontend:dev": "yarn workspace @hackmoney2026/frontend dev",
     "frontend:build": "yarn workspace @hackmoney2026/frontend build",
     "frontend:preview": "yarn workspace @hackmoney2026/frontend preview",
-    "frontend:lint": "yarn workspace @hackmoney2026/frontend lint"
+    "frontend:lint": "yarn workspace @hackmoney2026/frontend lint",
+    "server:build": "yarn workspace @hackmoney2026/server build",
+    "server:start": "yarn workspace @hackmoney2026/server start",
+    "server:dev": "yarn workspace @hackmoney2026/server dev"
   },
   "keywords": [],
   "author": "",

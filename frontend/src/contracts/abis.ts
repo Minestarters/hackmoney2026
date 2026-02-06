@@ -27,6 +27,22 @@ export const minestartersFactoryAbi = [
     type: "function",
   },
   {
+    inputs: [
+      { internalType: "string", name: "projectName", type: "string" },
+      { internalType: "string[]", name: "companyNames", type: "string[]" },
+      { internalType: "uint256[]", name: "companyWeights", type: "uint256[]" },
+      { internalType: "uint256", name: "minimumRaise", type: "uint256" },
+      { internalType: "uint256", name: "deadline", type: "uint256" },
+      { internalType: "address", name: "withdrawAddress", type: "address" },
+      { internalType: "uint256", name: "raiseFeeBps", type: "uint256" },
+      { internalType: "uint256", name: "profitFeeBps", type: "uint256" },
+    ],
+    name: "createProjectWithNAV",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "external",
+    type: "function",
+  },
+  {
     inputs: [],
     name: "getAllProjects",
     outputs: [{ internalType: "address[]", name: "", type: "address[]" }],
@@ -331,7 +347,8 @@ export const navEngineAbi = [
       { "name": "vault", "type": "address", "internalType": "address" },
       { "name": "companyIndex", "type": "uint256", "internalType": "uint256" },
       { "name": "newYearsToProduction", "type": "uint32", "internalType": "uint32" },
-      { "name": "newRemainingMineLife", "type": "uint32", "internalType": "uint32" }
+      { "name": "newRemainingMineLife", "type": "uint32", "internalType": "uint32" },
+      { "name": "ipfsHashes", "type": "string[]", "internalType": "string[]" }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"

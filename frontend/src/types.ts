@@ -50,11 +50,12 @@ export type CompanyDetails = {
 export type CompanyDocument = {
   id: string;
   companyIndex: number;
-  fileName: string;
-  uploadedAt: number;
+  fileName?: string;
+  uploadedAt: number; // Block timestamp from subgraph
   stage: number;
   ipfsHash?: string;
   localPath?: string;
+  closedStage: number;
 };
 
 export type UserPosition = {

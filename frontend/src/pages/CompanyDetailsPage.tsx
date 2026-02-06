@@ -9,18 +9,16 @@ import {
 } from "../lib/contracts";
 import { formatUsdc, shortAddress } from "../lib/format";
 import { COMPANY_STAGE_LABELS } from "../types";
-import { NAV_ENGINE_ADDRESS, EXPLORER_URL, getExplorerUrl } from "../config";
+import {
+  NAV_ENGINE_ADDRESS,
+  EXPLORER_URL,
+  getExplorerUrl,
+  API_BASE_URL,
+} from "../config";
 import type { ProjectInfo, CompanyDetails, CompanyDocument } from "../types";
 import { DocumentManager } from "../components/DocumentManager";
-import {
-  getMockCompany,
-  getMockDocuments,
-  addMockDocument,
-  removeMockDocument,
-} from "../lib/mockData";
-
-// Set to true to use mock data, false to fetch from contract
-const USE_MOCK_DATA = true;
+import { useCompanyDocuments } from "../hooks/useCompanyDocuments";
+import { useInvalidateKey } from "../hooks/useInvalidateKey";
 
 const COMPANY_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
 
@@ -42,6 +40,7 @@ export const CompanyDetailsPage = () => {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [company, setCompany] = useState<CompanyDetails | null>(null);
   const [documents, setDocuments] = useState<CompanyDocument[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,6 +49,12 @@ export const CompanyDetailsPage = () => {
   );
 
   const companyIndex = companyIndexStr ? parseInt(companyIndexStr, 10) : -1;
+
+  // Fetch documents from subgraph
+  const { data: subgraphDocuments, isLoading: documentsLoading } =
+    useCompanyDocuments(address, companyIndex);
+
+  // const invalidate = useInvalidateKey()
 
   // Update explorer URL based on network
   useEffect(() => {
@@ -100,74 +105,32 @@ export const CompanyDetailsPage = () => {
           setProject(projectInfo);
         } catch (err) {
           console.warn("Failed to fetch project info:", err);
-          // Continue anyway - might be using mock data
+          // Continue anyway
         }
 
-        // Fetch company details - from contract or mock
+        // Fetch company details from contract
         let companyData: CompanyDetails | null = null;
 
-        if (USE_MOCK_DATA) {
-          // Use mock data
-          companyData = getMockCompany(companyIndex) || null;
-          if (!companyData) {
-            setError(
-              `Mock data not available for company index ${companyIndex}`,
-            );
-            setLoading(false);
-            return;
-          }
-        } else {
-          // Fetch from contract
-          if (!NAV_ENGINE_ADDRESS) {
-            setError("NAV Engine address not configured");
-            setLoading(false);
-            return;
-          }
+        if (!NAV_ENGINE_ADDRESS) {
+          setError("NAV Engine address not configured");
+          setLoading(false);
+          return;
+        }
 
-          try {
-            companyData = await fetchFullCompanyData(
-              address,
-              companyIndex,
-              NAV_ENGINE_ADDRESS,
-              provider,
-            );
-          } catch (err) {
-            console.warn(
-              "Failed to fetch company data from contract, using mock:",
-              err,
-            );
-            // Fallback to mock data
-            companyData = getMockCompany(companyIndex) || null;
-            if (!companyData) {
-              throw new Error("No contract data and no mock data available");
-            }
-          }
+        try {
+          companyData = await fetchFullCompanyData(
+            address,
+            companyIndex,
+            NAV_ENGINE_ADDRESS,
+            provider,
+          );
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : "Failed to fetch company data";
+          throw new Error(message);
         }
 
         setCompany(companyData);
-
-        // Load documents from localStorage or mock
-        let docs: CompanyDocument[] = [];
-
-        if (USE_MOCK_DATA) {
-          // Use mock documents
-          docs = getMockDocuments(address, companyIndex);
-        } else {
-          // Try to load from localStorage
-          const storedDocs = localStorage.getItem(
-            `company_docs_${address}_${companyIndex}`,
-          );
-          if (storedDocs) {
-            try {
-              const parsed = JSON.parse(storedDocs);
-              docs = Array.isArray(parsed) ? parsed : [];
-            } catch {
-              docs = [];
-            }
-          }
-        }
-
-        setDocuments(docs);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to load company details";
@@ -181,44 +144,20 @@ export const CompanyDetailsPage = () => {
     loadData();
   }, [address, companyIndex, provider]);
 
-  const handleAddDocument = useCallback(
-    async (file: File) => {
-      if (!address || companyIndex < 0 || !company) {
-        toast.error("Invalid project or company");
-        return;
-      }
+  // Update documents when subgraph data is loaded
+  useEffect(() => {
+    if (subgraphDocuments) {
+      setDocuments(subgraphDocuments);
+    }
+  }, [subgraphDocuments]);
 
-      try {
-        const newDoc: CompanyDocument = {
-          id: `${Date.now()}_${Math.random().toString(36).substring(7)}`,
-          companyIndex,
-          fileName: file.name,
-          uploadedAt: Date.now(),
-          stage: company.stage,
-          localPath: `${address}_${companyIndex}/${file.name}`,
-        };
+  const handleAddDocuments = useCallback((files: File[]) => {
+    setPendingFiles((prev) => [...prev, ...files]);
+  }, []);
 
-        const updatedDocs = [...documents, newDoc];
-        setDocuments(updatedDocs);
-
-        if (USE_MOCK_DATA) {
-          // Add to mock data
-          addMockDocument(address, companyIndex, file.name, company.stage);
-        } else {
-          // Store in localStorage (in production, this would be IPFS/backend)
-          localStorage.setItem(
-            `company_docs_${address}_${companyIndex}`,
-            JSON.stringify(updatedDocs),
-          );
-        }
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to upload document";
-        throw new Error(message);
-      }
-    },
-    [address, companyIndex, documents, company],
-  );
+  const handleRemovePendingFile = useCallback((fileName: string) => {
+    setPendingFiles((prev) => prev.filter((f) => f.name !== fileName));
+  }, []);
 
   const handleDeleteDocument = useCallback(
     async (documentId: string) => {
@@ -230,17 +169,6 @@ export const CompanyDetailsPage = () => {
       try {
         const updatedDocs = documents.filter((doc) => doc.id !== documentId);
         setDocuments(updatedDocs);
-
-        if (USE_MOCK_DATA) {
-          // Remove from mock data
-          removeMockDocument(address, companyIndex, documentId);
-        } else {
-          // Update localStorage
-          localStorage.setItem(
-            `company_docs_${address}_${companyIndex}`,
-            JSON.stringify(updatedDocs),
-          );
-        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to delete document";
@@ -268,17 +196,61 @@ export const CompanyDetailsPage = () => {
 
     try {
       setIsSubmitting(true);
+      let uploadedDocs = [...documents];
 
-      // Step 1: Submit documents (mock)
-      toast.loading("Submitting documents...");
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      toast.success("Documents submitted successfully");
+      // Step 1: Upload pending files to IPFS
+      if (pendingFiles.length > 0) {
+        toast.loading(`Uploading ${pendingFiles.length} file(s) to IPFS...`);
+
+        const formData = new FormData();
+        pendingFiles.forEach((file) => {
+          formData.append("files", file);
+        });
+
+        const response = await fetch(`${API_BASE_URL}/upload`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to upload documents");
+        }
+
+        const uploadResult = await response.json();
+
+        // Create document records for uploaded files
+        if (uploadResult.uploads && Array.isArray(uploadResult.uploads)) {
+          const newDocs = uploadResult.uploads
+            .filter((upload: { cid: string; fileName: string }) => upload.cid) // Only include successful uploads
+            .map((upload: { cid: string; fileName: string }) => ({
+              id: `${Date.now()}_${Math.random().toString(36).substring(7)}`,
+              companyIndex,
+              fileName: upload.fileName,
+              uploadedAt: Date.now(),
+              stage: company.stage,
+              ipfsHash: upload.cid,
+            }));
+
+          uploadedDocs = [...uploadedDocs, ...newDocs];
+          setPendingFiles([]); // Clear pending files
+          toast.success(`${newDocs.length} file(s) uploaded successfully`);
+        }
+      }
+
+      // Update documents state
+      setDocuments(uploadedDocs);
 
       // Step 2: Get current company data to determine next stage parameters
       // For now, we'll use reasonable defaults based on test files
       // These parameters would normally come from user input or company data
       const yearsToProduction = Math.max(0, company.yearsToProduction - 1);
       const remainingMineLife = Math.max(0, company.remainingMineLife);
+
+      // Collect IPFS hashes from newly uploaded documents
+      const ipfsHashes = uploadedDocs
+        .filter((doc) => doc.ipfsHash)
+        .map((doc) => doc.ipfsHash || "");
 
       // Show progress
       toast.loading("Advancing company stage on-chain...");
@@ -290,6 +262,7 @@ export const CompanyDetailsPage = () => {
         yearsToProduction,
         remainingMineLife,
         signer,
+        ipfsHashes,
       );
 
       if (result.status === "success") {
@@ -324,9 +297,18 @@ export const CompanyDetailsPage = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [address, companyIndex, company, isSubmitting, signer, provider]);
+  }, [
+    address,
+    companyIndex,
+    company,
+    isSubmitting,
+    signer,
+    provider,
+    documents,
+    pendingFiles,
+  ]);
 
-  if (loading) {
+  if (loading || documentsLoading) {
     return (
       <div className="min-h-screen bg-stone-950 p-4 sm:p-8">
         <div className="mx-auto max-w-4xl">
@@ -454,11 +436,11 @@ export const CompanyDetailsPage = () => {
         {/* Document Manager */}
         {company && (
           <DocumentManager
-            companyIndex={companyIndex}
-            companyName={company.name}
             currentStage={company.stage}
             documents={documents}
-            onAddDocument={handleAddDocument}
+            pendingFiles={pendingFiles}
+            onAddDocuments={handleAddDocuments}
+            onRemovePendingFile={handleRemovePendingFile}
             onDeleteDocument={handleDeleteDocument}
             onSubmit={handleSubmit}
             isSubmitting={isSubmitting}
