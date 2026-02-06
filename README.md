@@ -2,7 +2,7 @@
 
 tl;dr: Off-chain collaborative curation of mining company portfolios, NAV-aware on-chain liquidity, and cross-chain capital rails for mining finance.
 
-## 💡 Why Minestarters
+## 💡 Why Minestarters 
 
 Junior mining exploration is structurally underfunded. Even with stronger commodity prices, exploration budgets in key regions (including parts of Africa) are near decade lows. Operating-level price strength does not reliably become risk capital for early-stage companies. High failure rates and asymmetric risk-reward force investors to deploy large amounts of capital just to diversify, shrinking the pool of suitable backers and leaving fragmented, slow funding routes that strand many high-quality projects.
 
