@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: hackmoney2026-backend
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: yarn install && yarn build
+    startCommand: yarn start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.17.0"

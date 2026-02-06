@@ -1,24 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { formatUnits, parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
 import BridgeKitModal from "../components/BridgeKitModal";
 import DistributeProfitModal from "../components/DistributeProfitModal";
+import { formatUnits, parseUnits } from "viem";
+import { useAccount, useConnect } from "wagmi";
+import { injected } from "wagmi/connectors";
 import {
   EXPLORER_URL,
   STAGE_LABELS,
   getExplorerUrl,
 } from "../config";
-import { useWallet } from "../context/WalletContext";
 import {
   fetchProjectInfo,
   fetchSupporterCount,
   fetchUserPosition,
-  getVault,
-  getUsdc,
+  writeVault,
+  writeUsdc,
+  getUsdcRead,
 } from "../lib/contracts";
 import { formatBpsAsPercent, formatUsdc, shortAddress } from "../lib/format";
+import { publicClient, getWalletClient } from "../lib/wagmi";
 import type { ProjectInfo, UserPosition } from "../types";
 
 const PIE_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
@@ -142,7 +145,8 @@ const IconFee = (props: React.SVGProps<SVGSVGElement>) => (
 
 const ProjectPage = () => {
   const { address } = useParams<{ address: string }>();
-  const { provider, signer, account, connect } = useWallet();
+  const { address: account, isConnected } = useAccount();
+  const { connect } = useConnect();
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [position, setPosition] = useState<UserPosition | null>(null);
   const [supportCount, setSupportCount] = useState<number | null>(null);
@@ -176,40 +180,23 @@ const ProjectPage = () => {
 
   useEffect(() => {
     if (EXPLORER_URL) return;
-    let cancelled = false;
-
-    const resolveExplorer = async () => {
-      if (!provider) return;
-      try {
-        const network = await provider.getNetwork();
-        if (!cancelled) {
-          setExplorerBaseUrl(
-            sanitizeExplorerUrl(getExplorerUrl(network.chainId)),
-          );
-        }
-      } catch (error) {
-        console.error("Failed to determine explorer URL", error);
-        if (!cancelled) {
-          setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl()));
-        }
-      }
-    };
-
-    resolveExplorer();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [provider]);
+    // Use chain ID from publicClient
+    const chainId = publicClient.chain?.id;
+    if (chainId) {
+      setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl(chainId)));
+    }
+  }, []);
 
   const reloadProjectData = useCallback(async () => {
-    if (!address || !provider) return;
+    if (!address) return;
     setSupportCount(null);
 
     try {
-      const [info, supporters] = await Promise.all([
-        fetchProjectInfo(address, provider),
-        fetchSupporterCount(address),
+      const projectAddress = address as `0x${string}`;
+      const [info, supporters, claimedTotal] = await Promise.all([
+        fetchProjectInfo(projectAddress),
+        fetchSupporterCount(projectAddress),
+        fetchTotalClaimed(projectAddress),
       ]);
 
       setProject(info);
@@ -217,7 +204,7 @@ const ProjectPage = () => {
     } catch (error) {
       console.error("Failed to reload project data", error);
     }
-  }, [address, provider]);
+  }, [address]);
 
   useEffect(() => {
     if (!address) return;
@@ -246,12 +233,12 @@ const ProjectPage = () => {
       setPosition(null);
       return;
     }
-    if (!project || !provider) return;
+    if (!project) return;
 
     let cancelled = false;
     const loadPosition = async () => {
       try {
-        const pos = await fetchUserPosition(project, account, provider);
+        const pos = await fetchUserPosition(project, account as `0x${string}`);
         if (!cancelled) {
           setPosition(pos);
         }
@@ -268,7 +255,7 @@ const ProjectPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [account, project, provider]);
+  }, [account, project]);
 
   const handleDepositComplete = async () => {
     await reloadProjectData();
@@ -323,14 +310,21 @@ const ProjectPage = () => {
 
   const handleRefund = async () => {
     if (!project) return;
-    if (!signer) {
-      await connect();
+    if (!isConnected) {
+      connect({ connector: injected() });
+      return;
+    }
+    const walletClient = await getWalletClient();
+    if (!walletClient) {
+      toast.error("Could not get wallet");
       return;
     }
     try {
-      const vault = getVault(project.address, signer);
       await toast.promise(
-        vault.refund().then((tx) => tx.wait()),
+        (async () => {
+          const hash = await writeVault.refund(walletClient, project.address as `0x${string}`);
+          await publicClient.waitForTransactionReceipt({ hash });
+        })(),
         {
           loading: "Processing refund...",
           success: "Refund complete",
@@ -707,7 +701,7 @@ const ProjectPage = () => {
             </div>
             {!account && (
               <button
-                onClick={connect}
+                onClick={() => connect({ connector: injected() })}
                 className="button-blocky rounded px-3 py-2 text-[11px] uppercase"
               >
                 Connect

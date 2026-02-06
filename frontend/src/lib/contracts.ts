@@ -1,74 +1,171 @@
 import { Contract } from "ethers";
 import type { BrowserProvider, JsonRpcProvider, Signer } from "ethers";
 import { FACTORY_ADDRESS, USDC_ADDRESS } from "../config";
+import { getContract } from "viem";
 import {
   basketVaultAbi,
   erc20Abi,
   minestartersFactoryAbi,
 } from "../contracts/abis";
+import { publicClient, type WalletClientWithAccount } from "./wagmi";
 import type { ProjectInfo, UserPosition } from "../types";
 import { getProjectsList, getProjectSupporterCount } from "./subgraph";
 
-type Connection = BrowserProvider | JsonRpcProvider | Signer;
+// Read-only contract getters (use publicClient)
+export const getVaultRead = (address: `0x${string}`) =>
+  getContract({
+    address,
+    abi: basketVaultAbi,
+    client: publicClient,
+  });
 
-export const getFactory = (provider: Connection) =>
-  new Contract(FACTORY_ADDRESS, minestartersFactoryAbi, provider);
+export const getUsdcRead = () =>
+  getContract({
+    address: USDC_ADDRESS as `0x${string}`,
+    abi: erc20Abi,
+    client: publicClient,
+  });
 
-export const getVault = (address: string, provider: Connection) =>
-  new Contract(address, basketVaultAbi, provider);
+export const getFactoryRead = () =>
+  getContract({
+    address: FACTORY_ADDRESS as `0x${string}`,
+    abi: minestartersFactoryAbi,
+    client: publicClient,
+  });
 
-export const getUsdc = (provider: Connection) =>
-  new Contract(USDC_ADDRESS, erc20Abi, provider);
+// Write helpers using writeContract directly
+export const writeFactory = {
+  createProject: async (
+    walletClient: WalletClientWithAccount,
+    args: {
+      projectName: string;
+      companyNames: string[];
+      companyWeights: bigint[];
+      minimumRaise: bigint;
+      deadline: bigint;
+      withdrawAddress: `0x${string}`;
+      raiseFeeBps: bigint;
+      profitFeeBps: bigint;
+    }
+  ) => {
+    return walletClient.writeContract({
+      address: FACTORY_ADDRESS as `0x${string}`,
+      abi: minestartersFactoryAbi,
+      functionName: "createProject",
+      args: [
+        args.projectName,
+        args.companyNames,
+        args.companyWeights,
+        args.minimumRaise,
+        args.deadline,
+        args.withdrawAddress,
+        args.raiseFeeBps,
+        args.profitFeeBps,
+      ],
+    });
+  },
+};
 
-const normalizeWeights = (weights: bigint[]) => weights.map((w) => Number(w));
+export const writeVault = {
+  deposit: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`, amount: bigint) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "deposit",
+      args: [amount],
+    });
+  },
+  claimProfit: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "claimProfit",
+    });
+  },
+  refund: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "refund",
+    });
+  },
+  withdrawRaisedFunds: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "withdrawRaisedFunds",
+    });
+  },
+  depositProfit: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`, amount: bigint) => {
+    return walletClient.writeContract({
+      address: vaultAddress,
+      abi: basketVaultAbi,
+      functionName: "depositProfit",
+      args: [amount],
+    });
+  },
+};
+
+export const writeUsdc = {
+  approve: async (walletClient: WalletClientWithAccount, spender: `0x${string}`, amount: bigint) => {
+    return walletClient.writeContract({
+      address: USDC_ADDRESS as `0x${string}`,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [spender, amount],
+    });
+  },
+  mint: async (walletClient: WalletClientWithAccount, to: `0x${string}`, amount: bigint) => {
+    return walletClient.writeContract({
+      address: USDC_ADDRESS as `0x${string}`,
+      abi: erc20Abi,
+      functionName: "mint",
+      args: [to, amount],
+    });
+  },
+};
+
+const normalizeWeights = (weights: readonly bigint[]) => weights.map((w) => Number(w));
 
 export const fetchProjectInfo = async (
-  address: string,
-  provider: BrowserProvider | JsonRpcProvider
+  address: `0x${string}`
 ): Promise<ProjectInfo> => {
-  const vault = getVault(address, provider);
-  const info = await vault.getProjectInfo();
+  const vault = getVaultRead(address);
+  const info = await vault.read.getProjectInfo();
+  
   let accruedRaiseFees: bigint = 0n;
   try {
-    accruedRaiseFees = await vault.accruedRaiseFees();
+    accruedRaiseFees = await vault.read.accruedRaiseFees();
   } catch {
     // older ABI; fall back to zero if method not present
   }
+  
   let withdrawnTotal = 0n;
   let hasWithdrawnValue = false;
   try {
-    const withdrawnResult = await vault.withdrawnPrincipal?.();
+    const withdrawnResult = await vault.read.withdrawnPrincipal();
     if (withdrawnResult != null) {
-      withdrawnTotal =
-        typeof withdrawnResult === "bigint" ? withdrawnResult : BigInt(withdrawnResult);
+      withdrawnTotal = withdrawnResult;
       hasWithdrawnValue = true;
     }
   } catch {
     // method may not exist on older deployments
   }
+  
   let withdrawable = 0n;
   let withdrawableFees = accruedRaiseFees;
   try {
-    const withdrawableResult = await vault.withdrawableFunds();
-    if (typeof withdrawableResult === "bigint") {
-      withdrawable = withdrawableResult;
-    } else {
-      const asObj = withdrawableResult as any;
-      const legacyValue = asObj?.principal ?? asObj?.[0];
-      const feeValue = asObj?.fees ?? asObj?.[1];
-      withdrawable = legacyValue != null ? BigInt(legacyValue) : 0n;
-      if (feeValue != null) {
-        withdrawableFees = BigInt(feeValue);
-      }
-    }
+    const [principal, fees] = await vault.read.withdrawableFunds();
+    withdrawable = principal;
+    withdrawableFees = fees;
   } catch {
-    const raised = info.raised as bigint;
+    const raised = info[10]; // raised
     if (hasWithdrawnValue) {
       const available = raised > withdrawnTotal ? raised - withdrawnTotal : 0n;
       withdrawable = available > accruedRaiseFees ? available - accruedRaiseFees : 0n;
       withdrawableFees = available > accruedRaiseFees ? accruedRaiseFees : available;
     } else {
-      const minimumRaise = info.minRaise as bigint;
+      const minimumRaise = info[6]; // minRaise
       if (raised >= minimumRaise) {
         withdrawable = raised > accruedRaiseFees ? raised - accruedRaiseFees : 0n;
         withdrawableFees = raised > accruedRaiseFees ? accruedRaiseFees : raised;
@@ -94,7 +191,7 @@ export const fetchProjectInfo = async (
     withdrawable,
     withdrawableFees,
     withdrawnTotal,
-    stage: Number(info.stage) as ProjectInfo["stage"],
+    stage: Number(info[16]) as ProjectInfo["stage"], // stage
   };
 };
 
@@ -111,8 +208,7 @@ export const fetchSupporterCount = async (
 
 export const fetchUserPosition = async (
   project: ProjectInfo,
-  user: string,
-  provider: BrowserProvider | JsonRpcProvider
+  user: `0x${string}`
 ): Promise<UserPosition> => {
   const shareToken = new Contract(project.shareToken, erc20Abi, provider);
   const [usdcBalance, shareBalance] = await Promise.all([

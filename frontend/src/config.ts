@@ -3,6 +3,24 @@ export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 export const RPC_URL = "https://rpc.testnet.arc.network";
 export const EXPLORER_URL = import.meta.env.VITE_EXPLORER_URL || "";
 export const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1740165/minestarters-hackmoney/version/latest";
+export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
+export const YELLOW_WS_URL =
+  import.meta.env.VITE_YELLOW_WS_URL || "wss://clearnet.yellow.com/ws";
+export const YELLOW_PROTOCOL =
+  import.meta.env.VITE_YELLOW_PROTOCOL || "NitroRPC/0.4";
+export const YELLOW_ASSET = import.meta.env.VITE_YELLOW_ASSET || "ytest.USD";
+export const YELLOW_APPLICATION = "minestarters-curators";
+export const YELLOW_SCOPE =
+  import.meta.env.VITE_YELLOW_SCOPE || "transfer,app.create";
+export const YELLOW_SESSION_EXPIRES_MS = Number(
+  import.meta.env.VITE_YELLOW_SESSION_EXPIRES_MS || `${7 * 24 * 60 * 60 * 1000}`
+);
+export const SESSION_API_URL =
+  import.meta.env.VITE_SESSION_API_URL || "https://hackmoney2026.onrender.com";
+export const YELLOW_WALLET_1_SEED_PHRASE =
+  import.meta.env.VITE_WALLET_1_SEED_PHRASE || "";
+export const YELLOW_WALLET_2_SEED_PHRASE =
+  import.meta.env.VITE_WALLET_2_SEED_PHRASE || "";
 
 const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",
