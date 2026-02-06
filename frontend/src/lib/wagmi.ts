@@ -1,5 +1,5 @@
 import { http, createConfig } from "wagmi";
-import { sepolia, localhost } from "wagmi/chains";
+import { localhost, arcTestnet } from "wagmi/chains";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, createWalletClient, custom } from "viem";
 import type { Account, Chain, Transport, WalletClient } from "viem";
@@ -10,14 +10,14 @@ const isLocalhost =
   RPC_URL.includes("localhost") || RPC_URL.includes("127.0.0.1");
 
 // Export the primary chain
-export const chain = isLocalhost ? localhost : sepolia;
+export const chain = isLocalhost ? localhost : arcTestnet;
 
 // Wagmi config
 export const wagmiConfig = createConfig({
-  chains: [sepolia, localhost],
+  chains: [arcTestnet, localhost],
   connectors: [injected()],
   transports: {
-    [sepolia.id]: http(isLocalhost ? undefined : RPC_URL),
+    [arcTestnet.id]: http(isLocalhost ? undefined : RPC_URL),
     [localhost.id]: http(isLocalhost ? RPC_URL : undefined),
   },
 });
@@ -42,16 +42,16 @@ export const getWalletClient = async (): Promise<WalletClientWithAccount | null>
     }) as `0x${string}`[];
     const address = accounts?.[0];
     if (!address) return null;
-    
+
     const client = createWalletClient({
       account: address,
       chain,
       transport: custom(window.ethereum as Parameters<typeof custom>[0]),
     });
-    
+
     // Ensure account is set before returning
     if (!client.account) return null;
-    
+
     return client as WalletClientWithAccount;
   } catch {
     return null;

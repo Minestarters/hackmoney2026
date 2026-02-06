@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { useWallet } from "../context/WalletContext";
 import {
   fetchProjectInfo,
-  fetchFullCompanyData,
   advanceCompanyStage,
+  fetchCompanyDetails,
 } from "../lib/contracts";
 import { formatUsdc, shortAddress } from "../lib/format";
 import { COMPANY_STAGE_LABELS } from "../types";
@@ -18,6 +17,8 @@ import {
 import type { ProjectInfo, CompanyDetails, CompanyDocument } from "../types";
 import { DocumentManager } from "../components/DocumentManager";
 import { useCompanyDocuments } from "../hooks/useCompanyDocuments";
+import type { Address } from "viem";
+import { useConnection } from "wagmi";
 
 const COMPANY_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
 
@@ -34,10 +35,9 @@ interface RouteParams extends Record<string, string | undefined> {
 export const CompanyDetailsPage = () => {
   const { address, companyIndex: companyIndexStr } = useParams<RouteParams>();
   const navigate = useNavigate();
-  const { provider, signer } = useWallet();
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
-  const [company, setCompany] = useState<CompanyDetails | null>(null);
+  const [company, setCompany] = useState<Partial<CompanyDetails> | null>(null);
   const [documents, setDocuments] = useState<CompanyDocument[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,13 +47,13 @@ export const CompanyDetailsPage = () => {
     sanitizeExplorerUrl(getExplorerUrl()),
   );
 
+  const {isConnected, chainId} = useConnection()
+
   const companyIndex = companyIndexStr ? parseInt(companyIndexStr, 10) : -1;
 
   // Fetch documents from subgraph
   const { data: subgraphDocuments, isLoading: documentsLoading } =
     useCompanyDocuments(address, companyIndex);
-
-  // const invalidate = useInvalidateKey()
 
   // Update explorer URL based on network
   useEffect(() => {
@@ -61,12 +61,12 @@ export const CompanyDetailsPage = () => {
     let cancelled = false;
 
     const resolveExplorer = async () => {
-      if (!provider) return;
+      if (!chainId) return;
+
       try {
-        const network = await provider.getNetwork();
         if (!cancelled) {
           setExplorerBaseUrl(
-            sanitizeExplorerUrl(getExplorerUrl(network.chainId)),
+            sanitizeExplorerUrl(getExplorerUrl(chainId)),
           );
         }
       } catch (error) {
@@ -82,12 +82,12 @@ export const CompanyDetailsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [provider]);
+  }, [chainId]);
 
   // Load data
   useEffect(() => {
     const loadData = async () => {
-      if (!address || !provider || companyIndex < 0) {
+      if (!address || companyIndex < 0) {
         setError("Invalid parameters");
         setLoading(false);
         return;
@@ -100,7 +100,7 @@ export const CompanyDetailsPage = () => {
         // Fetch project info
         let projectInfo: ProjectInfo | null = null;
         try {
-          projectInfo = await fetchProjectInfo(address, provider);
+          projectInfo = await fetchProjectInfo(address as Address);
           setProject(projectInfo);
         } catch (err) {
           console.warn("Failed to fetch project info:", err);
@@ -108,7 +108,7 @@ export const CompanyDetailsPage = () => {
         }
 
         // Fetch company details from contract
-        let companyData: CompanyDetails | null = null;
+        let companyData: Partial<CompanyDetails> | null = null;
 
         if (!NAV_ENGINE_ADDRESS) {
           setError("NAV Engine address not configured");
@@ -117,18 +117,15 @@ export const CompanyDetailsPage = () => {
         }
 
         try {
-          companyData = await fetchFullCompanyData(
+          companyData = await fetchCompanyDetails(
             address,
             companyIndex,
-            NAV_ENGINE_ADDRESS,
-            provider,
           );
         } catch (err) {
           const message =
             err instanceof Error ? err.message : "Failed to fetch company data";
           throw new Error(message);
         }
-
         setCompany(companyData);
       } catch (err) {
         const message =
@@ -141,7 +138,7 @@ export const CompanyDetailsPage = () => {
     };
 
     loadData();
-  }, [address, companyIndex, provider]);
+  }, [address, companyIndex]);
 
   // Update documents when subgraph data is loaded
   useEffect(() => {
@@ -183,7 +180,7 @@ export const CompanyDetailsPage = () => {
       return;
     }
 
-    if (!signer) {
+    if (!isConnected) {
       toast.error("Please connect your wallet");
       return;
     }
@@ -240,11 +237,8 @@ export const CompanyDetailsPage = () => {
       // Update documents state
       setDocuments(uploadedDocs);
 
-      // Step 2: Get current company data to determine next stage parameters
-      // For now, we'll use reasonable defaults based on test files
-      // These parameters would normally come from user input or company data
-      const yearsToProduction = Math.max(0, company.yearsToProduction - 1);
-      const remainingMineLife = Math.max(0, company.remainingMineLife);
+      const yearsToProduction = Math.max(0, (company.yearsToProduction || 1) - 1);
+      const remainingMineLife = Math.max(0, company.remainingMineLife || 0);
 
       // Collect IPFS hashes from newly uploaded documents
       const ipfsHashes = uploadedDocs
@@ -260,23 +254,20 @@ export const CompanyDetailsPage = () => {
         companyIndex,
         yearsToProduction,
         remainingMineLife,
-        signer,
         ipfsHashes,
       );
 
-      if (result.status === "success") {
+      if (result) {
         toast.success(
-          `Stage advanced successfully! Tx: ${result.transactionHash?.slice(0, 10)}...`,
+          `Stage advanced successfully! Tx: ${result?.slice(0, 10)}...`,
         );
 
         // Reload company data
         if (NAV_ENGINE_ADDRESS) {
           try {
-            const updatedCompany = await fetchFullCompanyData(
+            const updatedCompany = await fetchCompanyDetails(
               address,
               companyIndex,
-              NAV_ENGINE_ADDRESS,
-              provider,
             );
             setCompany(updatedCompany);
           } catch (err) {
@@ -301,10 +292,9 @@ export const CompanyDetailsPage = () => {
     companyIndex,
     company,
     isSubmitting,
-    signer,
-    provider,
     documents,
     pendingFiles,
+    isConnected
   ]);
 
   if (loading || documentsLoading) {
@@ -379,7 +369,7 @@ export const CompanyDetailsPage = () => {
           {/* Stage Badge */}
           <div className="mb-6">
             <span className="inline-block rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white">
-              {COMPANY_STAGE_LABELS[company.stage]} Stage
+              {COMPANY_STAGE_LABELS[company?.stage || 0]} Stage
             </span>
           </div>
 
@@ -388,54 +378,54 @@ export const CompanyDetailsPage = () => {
             <MetricBox label="Weight" value={`${company.weight}%`} icon="⚖️" />
             <MetricBox
               label="NAV (USD)"
-              value={`$${formatUsdc(company.navUsd)}`}
+              value={`$${formatUsdc(company?.navUsd || 0n)}`}
               icon="💰"
             />
             <MetricBox
               label="Resource (tonnes)"
-              value={company.totalResourceTonnes.toString()}
+              value={company?.totalResourceTonnes?.toString() || '0'}
               icon="⛏️"
             />
             <MetricBox
               label="Inventory (tonnes)"
-              value={company.inventoryTonnes.toString()}
+              value={company?.inventoryTonnes?.toString() || '-'}
               icon="📦"
             />
-            <MetricBox
+            {/* <MetricBox
               label="Recovery Rate"
               value={`${(company.recoveryRateBps / 100).toFixed(2)}%`}
               icon="♻️"
-            />
-            <MetricBox
+            /> */}
+            {/* <MetricBox
               label="Discount Rate"
               value={`${(company.discountRateBps / 100).toFixed(2)}%`}
               icon="📊"
-            />
-            <MetricBox
+            /> */}
+            {/* <MetricBox
               label="Years to Production"
               value={company.yearsToProduction.toString()}
               icon="⏱️"
-            />
-            <MetricBox
+            /> */}
+            {/* <MetricBox
               label="Remaining Mine Life"
               value={company.remainingMineLife.toString()}
               icon="🕐"
-            />
+            /> */}
           </div>
 
           {/* Floor NAV */}
-          <div className="mt-6 rounded bg-stone-800/50 p-4">
+          {/* <div className="mt-6 rounded bg-stone-800/50 p-4">
             <p className="text-xs text-stone-400">Floor NAV</p>
             <p className="text-lg font-semibold text-sky-100">
               ${formatUsdc(company.floorNavTotalUsd)}
             </p>
-          </div>
+          </div> */}
         </div>
 
         {/* Document Manager */}
         {company && (
           <DocumentManager
-            currentStage={company.stage}
+            currentStage={company?.stage || 0}
             documents={documents}
             pendingFiles={pendingFiles}
             onAddDocuments={handleAddDocuments}

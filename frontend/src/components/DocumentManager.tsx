@@ -279,7 +279,7 @@ export const DocumentManager = ({
         <div className="mt-6 flex gap-3">
           <button
             onClick={() => onSubmit()}
-            disabled={isSubmitting}
+            disabled={isSubmitting || pendingFiles.length === 0}
             className="flex-1 rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-stone-600 disabled:text-stone-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {isSubmitting ? (

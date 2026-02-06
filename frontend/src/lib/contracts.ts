@@ -1,5 +1,3 @@
-import { Contract } from "ethers";
-import type { BrowserProvider, JsonRpcProvider, Signer } from "ethers";
 import { FACTORY_ADDRESS, USDC_ADDRESS, NAV_ENGINE_ADDRESS, START_BLOCK } from "../config";
 import { getContract } from "viem";
 import {
@@ -9,9 +7,8 @@ import {
   navEngineAbi,
 } from "../contracts/abis";
 import type { ProjectInfo, UserPosition, CompanyDetails } from "../types";
-import { publicClient, type WalletClientWithAccount } from "./wagmi";
+import { getWalletClient, publicClient, type WalletClientWithAccount } from "./wagmi";
 import { getProjectsList, getProjectSupporterCount } from "./subgraph";
-import type { Connection } from "wagmi";
 
 // Read-only contract getters (use publicClient)
 export const getVaultRead = (address: `0x${string}`) =>
@@ -34,6 +31,26 @@ export const getFactoryRead = () =>
     abi: minestartersFactoryAbi,
     client: publicClient,
   });
+
+export const getNAVEngineContract = () =>
+  getContract({
+    address: NAV_ENGINE_ADDRESS as `0x${string}`,
+    abi: navEngineAbi,
+    client: publicClient,
+  });
+
+export const getNAVEngineWrite = async (
+  walletClient: WalletClientWithAccount,
+  functionName: string,
+  args: Array<any>
+) => {
+  return walletClient.writeContract({
+    address: NAV_ENGINE_ADDRESS as `0x${string}`,
+    abi: navEngineAbi,
+    functionName,
+    args,
+  });
+}
 
 const toBigInt = (value?: number | bigint | null) => {
   if (typeof value === "bigint") return value;
@@ -410,62 +427,27 @@ export const fetchProjectAddresses = async (): Promise<`0x${string}`[]> => {
   }
 };
 
-export const getNAVEngine = (address: string, provider: Connection) =>
-  new Contract(address, navEngineAbi, provider);
-
 export const fetchCompanyDetails = async (
   vaultAddress: string,
   companyIndex: number,
-  navEngineAddress: string,
-  provider: BrowserProvider | JsonRpcProvider
-): Promise<CompanyDetails> => {
-  const navEngine = getNAVEngine(navEngineAddress, provider);
-  const result = await navEngine.getCompany(vaultAddress, companyIndex);
+): Promise<Partial<CompanyDetails>> => {
+  const navEngine = getNAVEngineContract();
+  const result = await navEngine.read.getCompany([vaultAddress, companyIndex]) as Array<string | bigint>;
 
   return {
-    name: result.name,
-    weight: Number(result.weight),
-    resourceTonnes: result.resourceTonnes as bigint,
-    inventoryTonnes: result.inventoryTonnes as bigint,
-    stage: Number(result.stage),
-    navUsd: result.navUsd as bigint,
-    totalResourceTonnes: result.resourceTonnes as bigint,
-    recoveryRateBps: 0,
-    yearsToProduction: 0,
-    remainingMineLife: 0,
-    discountRateBps: 0,
-    floorNavTotalUsd: 0n,
-  };
-};
-
-export const fetchFullCompanyData = async (
-  vaultAddress: string,
-  companyIndex: number,
-  navEngineAddress: string,
-  provider: BrowserProvider | JsonRpcProvider
-): Promise<CompanyDetails> => {
-  const navEngine = getNAVEngine(navEngineAddress, provider);
-
-  // Get the basic company info from getCompany
-  const basicInfo = await navEngine.getCompany(vaultAddress, companyIndex);
-
-  // Get the full company struct for all details
-  const fullCompany = await navEngine.companies(vaultAddress, companyIndex);
-
-  return {
-    name: fullCompany.name,
-    weight: Number(fullCompany.weight),
-    resourceTonnes: fullCompany.totalResourceTonnes as bigint,
-    inventoryTonnes: fullCompany.inventoryTonnes as bigint,
-    stage: Number(fullCompany.currentStage),
-    navUsd: basicInfo.navUsd as bigint,
-    totalResourceTonnes: fullCompany.totalResourceTonnes as bigint,
-    recoveryRateBps: Number(fullCompany.recoveryRateBps),
-    yearsToProduction: Number(fullCompany.yearsToProduction),
-    remainingMineLife: Number(fullCompany.remainingMineLife),
-    discountRateBps: Number(fullCompany.discountRateBps),
-    floorNavTotalUsd: fullCompany.floorNavTotalUsd as bigint,
-  };
+    name: result[0] as string,
+    weight: Number(result[1]),
+    resourceTonnes: result[2] as bigint,
+    inventoryTonnes: result[3] as bigint,
+    stage: Number(result[4]),
+    navUsd: result[5] as bigint,
+    //   totalResourceTonnes: 0n,
+    //   recoveryRateBps: 0,
+    //   yearsToProduction: 0,
+    //   remainingMineLife: 0,
+    //   discountRateBps: 0,
+    //   floorNavTotalUsd: 0n,
+  }
 };
 
 /**
@@ -481,34 +463,24 @@ export const advanceCompanyStage = async (
   companyIndex: number,
   yearsToProduction: number,
   remainingMineLife: number,
-  signer: Signer,
-  ipfsHashes: string[] = []
-): Promise<{
-  transactionHash: string,
-  blockNumber: number,
-  status: "success" | "failed"
-}> => {
-  if (!NAV_ENGINE_ADDRESS) {
-    throw new Error("NAV Engine address not configured");
-  }
+  ipfsHashes: string[] = [],
+): Promise<string | undefined> => {
+  const walletClient = await getWalletClient();
 
-  const navEngine = getNAVEngine(NAV_ENGINE_ADDRESS, signer);
+  if (!walletClient) return
 
   // Call advanceCompanyStage on the NAVEngine contract
-  const tx = await navEngine.advanceCompanyStage(
-    vaultAddress,
-    companyIndex,
-    yearsToProduction,
-    remainingMineLife,
-    ipfsHashes
+  const hash = await getNAVEngineWrite(
+    walletClient,
+    'advanceCompanyStage',
+    [
+      vaultAddress,
+      companyIndex,
+      yearsToProduction,
+      remainingMineLife,
+      ipfsHashes
+    ]
   );
+  return hash
 
-  // Wait for transaction to be mined
-  const receipt = await tx.wait();
-
-  return {
-    transactionHash: receipt?.hash,
-    blockNumber: receipt?.blockNumber,
-    status: receipt?.status === 1 ? "success" : "failed",
-  };
 };
