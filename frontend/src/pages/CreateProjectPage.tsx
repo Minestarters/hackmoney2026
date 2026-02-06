@@ -225,6 +225,17 @@ const CreateProjectPage = () => {
     setInviteCode("");
   };
 
+  const handleCloseAndDisconnect = async () => {
+    try {
+      await sessionManager.closeSession();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to close session";
+      setYellowError(msg);
+    } finally {
+      handleDisconnect();
+    }
+  };
+
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -961,20 +972,13 @@ const CreateProjectPage = () => {
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={handleCloseSession}
+                onClick={handleCloseAndDisconnect}
                 className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-red-900/40 px-4 py-2.5 text-sm text-red-300 transition-colors hover:bg-red-900/60"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
                 Close Session
-              </button>
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                className="cursor-pointer rounded-lg border border-stone-700 px-4 py-2.5 text-sm text-stone-400 transition-colors hover:bg-stone-800"
-              >
-                Disconnect
               </button>
             </div>
           </div>

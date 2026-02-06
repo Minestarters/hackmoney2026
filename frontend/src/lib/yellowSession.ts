@@ -69,11 +69,19 @@ export type FinalizationRequest = {
 };
 
 // Collaborative basket state - synced via session_data
+export type CloseRequest = {
+  req: RPCData;
+  sig: string[];
+  requestedBy: `0x${string}`;
+  timestamp: number;
+};
+
 export type BasketState = {
   companies: string[]; // List of company names
   stakes: Record<string, Record<string, string>>; // company -> { userAddr -> amount }
   formFields?: ProjectFormFields; // Collaborative form fields
   finalizationRequest?: FinalizationRequest; // Finalization voting state
+  closeRequest?: CloseRequest; // Session close coordination
 };
 
 export type YellowSessionState = {
@@ -256,6 +264,8 @@ export const createYellowSessionManager = (
   let user2Addr: `0x${string}` | null = null;
   let sessionNonce: number = 0;
   let stateVersion: number = 0; // Track state version for Yellow protocol
+  let closeRequestInFlight = false;
+  let closeFinalized = false;
 
   const setState = (newState: Partial<YellowSessionState>) => {
     state = { ...state, ...newState };
@@ -272,6 +282,34 @@ export const createYellowSessionManager = (
     await yellowClient.connect();
     logLine(logger, "Connected to Yellow clearnet.");
     return yellowClient;
+  };
+
+  const sendCloseWithSignatures = async (req: RPCData, sig: string[]): Promise<void> => {
+    if (!yellowClient) return;
+    if (closeFinalized) return;
+    closeFinalized = true;
+    await yellowClient.sendMessage(JSON.stringify({ req, sig }));
+    setState({ status: "closed" });
+    logLine(logger, "Close message sent with both signatures.");
+  };
+
+  const handleCloseRequest = async (closeRequest: CloseRequest): Promise<void> => {
+    if (!yellowClient || !messageSigner || !currentAppSessionId) return;
+    if (closeFinalized || closeRequestInFlight) return;
+
+    closeRequestInFlight = true;
+    try {
+      const mySig = await messageSigner(closeRequest.req);
+      const sigs = closeRequest.sig.includes(mySig)
+        ? closeRequest.sig
+        : [...closeRequest.sig, mySig];
+
+      if (sigs.length >= 2) {
+        await sendCloseWithSignatures(closeRequest.req, sigs);
+      }
+    } finally {
+      closeRequestInFlight = false;
+    }
   };
 
   // ========== CREATOR FLOW ==========
@@ -533,6 +571,9 @@ export const createYellowSessionManager = (
               const basket = JSON.parse(params.sessionData) as BasketState;
               stateUpdate.basket = basket;
               logLine(logger, `Basket update: ${basket.companies.length} companies, formFields: ${JSON.stringify(basket.formFields || {})}`);
+              if (basket.closeRequest) {
+                void handleCloseRequest(basket.closeRequest);
+              }
             } catch (e) {
               logLine(logger, `Failed to parse sessionData: ${e}`);
             }
@@ -678,6 +719,9 @@ export const createYellowSessionManager = (
               const basket = JSON.parse(params.sessionData) as BasketState;
               stateUpdate.basket = basket;
               logLine(logger, `Basket update: ${basket.companies.length} companies`);
+              if (basket.closeRequest) {
+                void handleCloseRequest(basket.closeRequest);
+              }
             } catch (e) {
               logLine(logger, `Failed to parse sessionData: ${e}`);
             }
@@ -776,7 +820,7 @@ export const createYellowSessionManager = (
       throw new Error("Session not active");
     }
 
-    logLine(logger, "Closing session...");
+    logLine(logger, "Closing session (requesting both signatures)...");
 
     const finalAllocations = [
       { participant: user1Addr, asset: "ytest.usd", amount: state.allocations?.user1 || "0" },
@@ -788,10 +832,24 @@ export const createYellowSessionManager = (
       allocations: finalAllocations,
     });
 
-    await yellowClient.sendMessage(closeMessage);
+    const parsed = JSON.parse(closeMessage) as { req: RPCData; sig: string[] };
 
-    setState({ status: "closed" });
-    logLine(logger, "Close request sent. Full closure requires both signatures.");
+    const closeRequest: CloseRequest = {
+      req: parsed.req,
+      sig: parsed.sig,
+      requestedBy: getCurrentUserAddress(),
+      timestamp: Date.now(),
+    };
+
+    const currentBasket = state.basket || { companies: [], stakes: {} };
+    const newBasket: BasketState = {
+      ...currentBasket,
+      closeRequest,
+    };
+
+    await submitBasketUpdate(newBasket);
+
+    logLine(logger, "Close request broadcast. Waiting for second signature...");
   };
 
   const disconnect = () => {
@@ -802,6 +860,8 @@ export const createYellowSessionManager = (
     user2Addr = null;
     sessionNonce = 0;
     stateVersion = 0;
+    closeRequestInFlight = false;
+    closeFinalized = false;
     setState({ status: "idle", invite: undefined, basket: undefined });
     logLine(logger, "Disconnected.");
   };
