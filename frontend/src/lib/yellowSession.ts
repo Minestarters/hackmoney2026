@@ -102,7 +102,9 @@ export type YellowSessionManager = {
   // Creator flow - creates invite for a specific joiner address
   createSession: (joinerAddress: `0x${string}`) => Promise<string>;
   // Joiner flow - uses connected wallet
-  joinWithInvite: (inviteCode: string) => Promise<void>;
+  joinWithInvite: (inviteCode: string) => Promise<{ appSessionId: `0x${string}`; version: number }>;
+  // Creator flow - adopt session created by joiner (backend relay)
+  adoptAppSession: (appSessionId: `0x${string}`, version?: number) => void;
   // Session operations
   transfer: (amount: string, toUser: "user1" | "user2") => Promise<void>;
   closeSession: () => Promise<void>;
@@ -171,7 +173,7 @@ const authenticateWallet = async (
   walletClient: WalletClient,
   logger?: Logger,
   requestFaucet = false
-): Promise<SessionKey> => {
+): Promise<{ sessionKey: SessionKey; balance: string }> => {
   const privateKey = generatePrivateKey();
   const account = privateKeyToAccount(privateKey);
   const sessionKey: SessionKey = {
@@ -244,7 +246,7 @@ const authenticateWallet = async (
   }
 
   logLine(logger, `Auth verified for ${address}`);
-  return sessionKey;
+  return { sessionKey, balance: verifyParams.balance || "0.00" };
 };
 
 // ============================================================================
@@ -263,6 +265,7 @@ export const createYellowSessionManager = (
   let user1Addr: `0x${string}` | null = null;
   let user2Addr: `0x${string}` | null = null;
   let sessionNonce: number = 0;
+  let expectedAllocations: RPCAppSessionAllocation[] | null = null;
   let stateVersion: number = 0; // Track state version for Yellow protocol
   let closeRequestInFlight = false;
   let closeFinalized = false;
@@ -314,6 +317,16 @@ export const createYellowSessionManager = (
 
   // ========== CREATOR FLOW ==========
 
+  const getAllocationsFromReq = (req: RPCData): RPCAppSessionAllocation[] | null => {
+    if (Array.isArray(req) && req.length >= 3) {
+      const params = req[2] as { allocations?: RPCAppSessionAllocation[] } | undefined;
+      if (params?.allocations && Array.isArray(params.allocations)) {
+        return params.allocations;
+      }
+    }
+    return null;
+  };
+
   // Creator creates session and invite for a specific joiner address
   const createSession = async (joinerAddress: `0x${string}`): Promise<string> => {
     const account = getAccount();
@@ -340,8 +353,8 @@ export const createYellowSessionManager = (
       });
 
       logLine(logger, "Authenticating as session creator...");
-      const sessionKey = await authenticateWallet(client, walletClient, logger, true);
-      messageSigner = createECDSAMessageSigner(sessionKey.privateKey);
+      const authResult = await authenticateWallet(client, walletClient, logger, true);
+      messageSigner = createECDSAMessageSigner(authResult.sessionKey.privateKey);
 
       const userAddress = walletClient.account?.address as `0x${string}`;
       user1Addr = userAddress;
@@ -362,13 +375,19 @@ export const createYellowSessionManager = (
         application: YELLOW_APPLICATION,
       };
 
-      // Allocate the balance from the faucet (typically ~100 ytest.usd)
+      const creatorBalance = parseFloat(authResult.balance || "0");
+      const creatorBalanceFormatted = Number.isFinite(creatorBalance)
+        ? creatorBalance.toFixed(2)
+        : "0.00";
+
+      // Allocate the user's Yellow balance into the session
       // User 1 contributes their balance, User 2 starts with 0 until they join
-      // CRITICAL: Total must remain constant across all state updates (100 + 0 = 100)
+      // CRITICAL: Total must remain constant across all state updates
       const initialAllocations = [
-        { participant: user1Addr, asset: "ytest.usd", amount: "100.00" },
+        { participant: user1Addr, asset: "ytest.usd", amount: creatorBalanceFormatted },
         { participant: joinerAddress, asset: "ytest.usd", amount: "0.00" },
       ] as RPCAppSessionAllocation[];
+      expectedAllocations = initialAllocations;
 
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/6a4ab02a-0ad5-4cf8-9458-6b22492899bf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yellowSession.ts:createSession',message:'Creating session with initial allocations',data:{user1:initialAllocations[0].amount,user2:initialAllocations[1].amount,total:100},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C,D'})}).catch(()=>{});
@@ -397,7 +416,13 @@ export const createYellowSessionManager = (
         user1Address: userAddress,
         user2Address: joinerAddress,
         invite: inviteCode,
-        yellowBalance: "100.00", // Balance from faucet
+        yellowBalance: creatorBalanceFormatted,
+        allocations: expectedAllocations
+          ? {
+              user1: expectedAllocations[0]?.amount || "0.00",
+              user2: expectedAllocations[1]?.amount || "0.00",
+            }
+          : undefined,
         basket: { companies: [], stakes: {} }, // Initialize basket so form can be shown
       });
 
@@ -458,9 +483,32 @@ export const createYellowSessionManager = (
               logLine(logger, `Checking session ${session.appSessionId}: nonce=${sessionDef?.nonce} (expected: ${sessionNonce}), participants=${JSON.stringify(session.participants)}`);
               
               // CRITICAL: Check nonce matches to avoid reconnecting to old sessions
+              const hasNonce = sessionDef?.nonce !== undefined;
               const nonceMatches = sessionDef?.nonce === sessionNonce;
-              if (!nonceMatches) {
-                logLine(logger, `Skipping session ${session.appSessionId} - nonce mismatch (got ${sessionDef?.nonce}, expected ${sessionNonce})`);
+              const allocationsMatch = expectedAllocations
+                ? expectedAllocations.every((expected) =>
+                    session.allocations?.some(
+                      (alloc) =>
+                        alloc.participant.toLowerCase() === expected.participant.toLowerCase() &&
+                        alloc.asset === expected.asset &&
+                        alloc.amount === expected.amount
+                    )
+                  )
+                : false;
+
+              if (hasNonce && !nonceMatches) {
+                logLine(
+                  logger,
+                  `Skipping session ${session.appSessionId} - nonce mismatch (got ${sessionDef?.nonce}, expected ${sessionNonce})`
+                );
+                continue;
+              }
+
+              if (!hasNonce && !allocationsMatch) {
+                logLine(
+                  logger,
+                  `Skipping session ${session.appSessionId} - missing nonce and allocations mismatch`
+                );
                 continue;
               }
               
@@ -489,10 +537,10 @@ export const createYellowSessionManager = (
                   status: "active",
                   appSessionId: session.appSessionId,
                   allocations: { 
-                    user1: user1Alloc?.amount || "100.00", 
-                    user2: user2Alloc?.amount || "100.00" 
+                    user1: user1Alloc?.amount || "0.00", 
+                    user2: user2Alloc?.amount || "0.00" 
                   },
-                  yellowBalance: "100.00", // Balance from faucet
+                  yellowBalance: creatorBalanceFormatted,
                   basket: { companies: [], stakes: {} }, // Initialize empty basket
                 });
                 return; // Stop polling
@@ -615,7 +663,9 @@ export const createYellowSessionManager = (
   // ========== JOINER FLOW ==========
 
   // Joiner receives invite, adds signature, submits to Yellow using their connected wallet
-  const joinWithInvite = async (inviteCode: string): Promise<void> => {
+  const joinWithInvite = async (
+    inviteCode: string
+  ): Promise<{ appSessionId: `0x${string}`; version: number }> => {
     const account = getAccount();
     if (!account) {
       throw new Error("No wallet connected. Please connect your wallet first.");
@@ -648,8 +698,8 @@ export const createYellowSessionManager = (
       }
 
       logLine(logger, "Authenticating as session joiner...");
-      const sessionKey = await authenticateWallet(client, walletClient, logger, true);
-      messageSigner = createECDSAMessageSigner(sessionKey.privateKey);
+      const authResult = await authenticateWallet(client, walletClient, logger, true);
+      messageSigner = createECDSAMessageSigner(authResult.sessionKey.privateKey);
 
       user1Addr = invite.creatorAddress;
       user2Addr = joinerAddress;
@@ -680,13 +730,21 @@ export const createYellowSessionManager = (
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/6a4ab02a-0ad5-4cf8-9458-6b22492899bf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yellowSession.ts:joiner-setState',message:'Joiner setting initial state',data:{appSessionId,sessionParamsVersion:sessionParams?.version},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C'})}).catch(()=>{});
       // #endregion
+      const inviteAllocations = getAllocationsFromReq(invite.req);
+      const user1Alloc = inviteAllocations?.find(
+        a => a.participant.toLowerCase() === invite.creatorAddress.toLowerCase()
+      );
+      const user2Alloc = inviteAllocations?.find(
+        a => a.participant.toLowerCase() === joinerAddress.toLowerCase()
+      );
+
       setState({
         status: "active",
         user1Address: invite.creatorAddress,
         user2Address: joinerAddress,
         appSessionId,
-        allocations: { user1: "100.00", user2: "0.00" }, // Must match session creation: 100 + 0 = 100 total
-        yellowBalance: "100.00", // Balance from faucet
+        allocations: { user1: user1Alloc?.amount || "0.00", user2: user2Alloc?.amount || "0.00" },
+        yellowBalance: authResult.balance || "0.00",
         basket: { companies: [], stakes: {} }, // Initialize empty basket
       });
 
@@ -751,10 +809,34 @@ export const createYellowSessionManager = (
           }
         }
       });
+      return { appSessionId, version: stateVersion || 1 };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to join session";
       setState({ status: "error", error: message });
       throw err;
+    }
+  };
+
+  const adoptAppSession = (appSessionId: `0x${string}`, version?: number) => {
+    currentAppSessionId = appSessionId;
+    if (version && version > 0) {
+      stateVersion = version;
+    } else if (!stateVersion) {
+      stateVersion = 1;
+    }
+    if (state.status === "invite_ready") {
+      const allocationsFromExpected = expectedAllocations
+        ? {
+            user1: expectedAllocations[0]?.amount || "0.00",
+            user2: expectedAllocations[1]?.amount || "0.00",
+          }
+        : state.allocations;
+
+      setState({
+        status: "active",
+        appSessionId,
+        allocations: allocationsFromExpected,
+      });
     }
   };
 
@@ -883,7 +965,7 @@ export const createYellowSessionManager = (
     // Use standard allocations (only registered assets like ytest.usd)
     // CRITICAL: Allocations must sum to the same total as session creation (100 + 0 = 100)
     const allocations = [
-      { participant: user1Addr, asset: "ytest.usd", amount: state.allocations?.user1 || "100.00" },
+      { participant: user1Addr, asset: "ytest.usd", amount: state.allocations?.user1 || "0.00" },
       { participant: user2Addr, asset: "ytest.usd", amount: state.allocations?.user2 || "0.00" },
     ] as RPCAppSessionAllocation[];
 
@@ -1114,6 +1196,7 @@ export const createYellowSessionManager = (
     },
     createSession,
     joinWithInvite,
+    adoptAppSession,
     transfer,
     closeSession,
     disconnect,
@@ -1171,11 +1254,11 @@ export const runYellowMultiPartySession = async (
 
   logLine(options.onLog, "Authenticating wallet 1...");
   const sessionKey = await authenticateWallet(yellow, walletClient, options.onLog);
-  const messageSigner = createECDSAMessageSigner(sessionKey.privateKey);
+  const messageSigner = createECDSAMessageSigner(sessionKey.sessionKey.privateKey);
 
   logLine(options.onLog, "Authenticating wallet 2...");
   const sessionKey2 = await authenticateWallet(yellow, wallet2Client, options.onLog);
-  const messageSigner2 = createECDSAMessageSigner(sessionKey2.privateKey);
+  const messageSigner2 = createECDSAMessageSigner(sessionKey2.sessionKey.privateKey);
 
   const userAddress = walletClient.account?.address as `0x${string}`;
   const partnerAddress = wallet2Client.account?.address as `0x${string}`;

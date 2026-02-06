@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseUnits } from "viem";
 import { useConnect, useConnection } from "wagmi";
 import { injected } from "wagmi/connectors";
@@ -11,6 +11,16 @@ import {
   type ProjectFormFields,
 } from "../lib/yellowSession";
 import { writeFactory } from "../lib/contracts";
+import {
+  createJoinCode,
+  deleteSession,
+  getAppSession,
+  getInvite,
+  getSession,
+  joinSession,
+  uploadAppSession,
+  uploadInvite,
+} from "../lib/sessionService";
 
 // Helper to calculate weights from basket stakes
 const calculateWeightsFromBasket = (basket: BasketState): { name: string; weight: number }[] => {
@@ -71,10 +81,17 @@ const CreateProjectPage = () => {
   const [yellowLogs, setYellowLogs] = useState<string[]>([]);
   const [yellowError, setYellowError] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<YellowSessionState>({ status: "idle" });
-  const [inviteCode, setInviteCode] = useState("");
-  const [joinerAddressInput, setJoinerAddressInput] = useState(""); // Address of the user to invite
+  const [joinCode, setJoinCode] = useState<string | null>(null);
+  const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [isWaitingForJoiner, setIsWaitingForJoiner] = useState(false);
+  const [isWaitingForInvite, setIsWaitingForInvite] = useState(false);
   const [soloMode, setSoloMode] = useState(false);
   const [copied, setCopied] = useState(false);
+  const joinerPollRef = useRef<number | null>(null);
+  const invitePollRef = useRef<number | null>(null);
+  const appSessionPollRef = useRef<number | null>(null);
+  const hostSessionStartedRef = useRef(false);
+  const inviteUploadedRef = useRef(false);
 
   // Solo mode basket state
   const [soloBasket, setSoloBasket] = useState<BasketState>({ companies: [], stakes: {} });
@@ -176,17 +193,130 @@ const CreateProjectPage = () => {
     }
   };
 
+  const clearJoinerPoll = () => {
+    if (joinerPollRef.current) {
+      window.clearTimeout(joinerPollRef.current);
+      joinerPollRef.current = null;
+    }
+  };
+
+  const clearInvitePoll = () => {
+    if (invitePollRef.current) {
+      window.clearTimeout(invitePollRef.current);
+      invitePollRef.current = null;
+    }
+  };
+
+  const clearAppSessionPoll = () => {
+    if (appSessionPollRef.current) {
+      window.clearTimeout(appSessionPollRef.current);
+      appSessionPollRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      clearJoinerPoll();
+      clearInvitePoll();
+      clearAppSessionPoll();
+    };
+  }, []);
+
+  const startJoinerPolling = (code: string) => {
+    clearJoinerPoll();
+    setIsWaitingForJoiner(true);
+    hostSessionStartedRef.current = false;
+
+    const poll = async () => {
+      try {
+        const session = await getSession(code);
+        if (session.joinerAddress && !hostSessionStartedRef.current) {
+          hostSessionStartedRef.current = true;
+          setIsWaitingForJoiner(false);
+          clearJoinerPoll();
+          await sessionManager.createSession(session.joinerAddress as `0x${string}`);
+          startAppSessionPolling(code);
+          return;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to load session";
+        setYellowError(msg);
+        setIsWaitingForJoiner(false);
+        clearJoinerPoll();
+        return;
+      }
+
+      joinerPollRef.current = window.setTimeout(poll, 2000);
+    };
+
+    joinerPollRef.current = window.setTimeout(poll, 500);
+  };
+
+  const startAppSessionPolling = (code: string) => {
+    clearAppSessionPoll();
+
+    const poll = async () => {
+      try {
+        const result = await getAppSession(code);
+        if (result.status === "app_session_ready" && result.appSessionId) {
+          clearAppSessionPoll();
+          sessionManager.adoptAppSession(result.appSessionId as `0x${string}`, result.version);
+          return;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to load app session";
+        setYellowError(msg);
+        clearAppSessionPoll();
+        return;
+      }
+
+      appSessionPollRef.current = window.setTimeout(poll, 2000);
+    };
+
+    appSessionPollRef.current = window.setTimeout(poll, 1000);
+  };
+
+  const startInvitePolling = (code: string) => {
+    clearInvitePoll();
+    setIsWaitingForInvite(true);
+
+    const poll = async () => {
+      try {
+        const inviteResult = await getInvite(code);
+        if (inviteResult.status === "invite_ready" && inviteResult.invite) {
+          setIsWaitingForInvite(false);
+          clearInvitePoll();
+          const joinResult = await sessionManager.joinWithInvite(inviteResult.invite);
+          await uploadAppSession(code, joinResult.appSessionId, joinResult.version);
+          return;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to load invite";
+        setYellowError(msg);
+        setIsWaitingForInvite(false);
+        clearInvitePoll();
+        return;
+      }
+
+      invitePollRef.current = window.setTimeout(poll, 2000);
+    };
+
+    invitePollRef.current = window.setTimeout(poll, 500);
+  };
+
   // Yellow Session Handlers - Creator Flow
   const handleCreateSession = async () => {
-    const trimmedJoiner = joinerAddressInput.trim();
-    if (!trimmedJoiner || !trimmedJoiner.startsWith("0x") || trimmedJoiner.length !== 42) {
-      setYellowError("Please enter a valid Ethereum address for the collaborator");
+    if (!account) {
+      setYellowError("Connect your wallet first");
       return;
     }
     setYellowError(null);
     setYellowLogs([]);
     try {
-      await sessionManager.createSession(trimmedJoiner as `0x${string}`);
+      const result = await createJoinCode(account);
+      setJoinCode(result.code);
+      inviteUploadedRef.current = false;
+      startJoinerPolling(result.code);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to create session";
       setYellowError(msg);
@@ -195,14 +325,25 @@ const CreateProjectPage = () => {
 
   // Yellow Session Handlers - Joiner Flow
   const handleJoinWithInvite = async () => {
-    if (!inviteCode.trim()) {
-      setYellowError("Paste the invite code");
+    const trimmedCode = joinCodeInput.trim().toUpperCase();
+    if (!trimmedCode) {
+      setYellowError("Enter the join code");
+      return;
+    }
+    if (!account) {
+      setYellowError("Connect your wallet first");
       return;
     }
     setYellowError(null);
     setYellowLogs([]);
     try {
-      await sessionManager.joinWithInvite(inviteCode.trim());
+      const joinResult = await joinSession(trimmedCode, account);
+      if (joinResult.invite) {
+        const sessionJoin = await sessionManager.joinWithInvite(joinResult.invite);
+        await uploadAppSession(trimmedCode, sessionJoin.appSessionId, sessionJoin.version);
+        return;
+      }
+      startInvitePolling(trimmedCode);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to join session";
       setYellowError(msg);
@@ -219,10 +360,19 @@ const CreateProjectPage = () => {
   };
 
   const handleDisconnect = () => {
+    clearJoinerPoll();
+    clearInvitePoll();
+    clearAppSessionPoll();
+    setIsWaitingForJoiner(false);
+    setIsWaitingForInvite(false);
     sessionManager.disconnect();
     setYellowLogs([]);
     setYellowError(null);
-    setInviteCode("");
+    setJoinCodeInput("");
+    if (joinCode) {
+      deleteSession(joinCode).catch(() => null);
+    }
+    setJoinCode(null);
   };
 
   const handleCloseAndDisconnect = async () => {
@@ -235,6 +385,28 @@ const CreateProjectPage = () => {
       handleDisconnect();
     }
   };
+
+  useEffect(() => {
+    if (!joinCode || !sessionState.invite || sessionState.status !== "invite_ready") return;
+    if (inviteUploadedRef.current) return;
+
+    inviteUploadedRef.current = true;
+    uploadInvite(joinCode, sessionState.invite).catch((err) => {
+      inviteUploadedRef.current = false;
+      const msg = err instanceof Error ? err.message : "Failed to upload invite";
+      setYellowError(msg);
+    });
+  }, [joinCode, sessionState.invite, sessionState.status]);
+
+  useEffect(() => {
+    if (sessionState.status === "active" || sessionState.status === "closed") {
+      setIsWaitingForJoiner(false);
+      setIsWaitingForInvite(false);
+      clearJoinerPoll();
+      clearInvitePoll();
+      clearAppSessionPoll();
+    }
+  }, [sessionState.status]);
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -426,8 +598,25 @@ const CreateProjectPage = () => {
     return total;
   };
 
-  // Get the current user's Yellow balance (from faucet)
-  const yellowBalance = parseFloat(sessionState.yellowBalance || "100");
+  // Get the current user's Yellow balance (from allocations or faucet)
+  const yellowBalance = useMemo(() => {
+    if (currentUserAddress && sessionState.allocations) {
+      const key =
+        currentUserAddress === sessionState.user1Address?.toLowerCase() ? "user1" : "user2";
+      const alloc = sessionState.allocations[key];
+      if (alloc) {
+        const parsedAlloc = parseFloat(alloc);
+        if (Number.isFinite(parsedAlloc) && parsedAlloc > 0) {
+          return parsedAlloc;
+        }
+      }
+    }
+    const fallback = parseFloat(sessionState.yellowBalance || "0");
+    if (!Number.isFinite(fallback) || fallback <= 0) {
+      return 1000;
+    }
+    return fallback;
+  }, [currentUserAddress, sessionState.allocations, sessionState.yellowBalance, sessionState.user1Address]);
   const currentUserStaked = currentUserAddress ? getTotalStakedByUser(currentUserAddress) : 0;
   const remainingBalance = yellowBalance - currentUserStaked;
 
@@ -723,6 +912,12 @@ const CreateProjectPage = () => {
   const isActive = sessionState.status === "active";
   const isClosed = sessionState.status === "closed";
   const canEditForm = isActive || isInviteReady || soloMode; // Show form when active, waiting for joiner, or solo mode
+  const showStatusBadge = !isIdle || isWaitingForJoiner || isWaitingForInvite;
+  const statusLabel = isWaitingForJoiner
+    ? "waiting for joiner"
+    : isWaitingForInvite
+      ? "waiting for invite"
+      : sessionState.status.replace(/_/g, " ");
 
   // Use solo basket when in solo mode, otherwise session basket
   const activeBasket = soloMode && isIdle ? soloBasket : sessionState.basket;
@@ -734,7 +929,7 @@ const CreateProjectPage = () => {
       {/* Yellow Session UI */}
       <div className="mb-6 rounded-lg bg-stone-900/50 p-5 text-sm">
         <div className="mb-4 flex items-center justify-between">
-          {!isIdle && (
+          {showStatusBadge && (
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
                 isActive
@@ -751,7 +946,7 @@ const CreateProjectPage = () => {
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
               )}
-              {sessionState.status.replace(/_/g, " ")}
+              {statusLabel}
             </span>
           )}
         </div>
@@ -772,27 +967,52 @@ const CreateProjectPage = () => {
                   <span className="text-base font-semibold text-sky-300">Host</span>
                 </div>
                 <p className="mb-4 text-center text-sm text-stone-400">
-                  Enter your collaborator's wallet address, then create a session.
+                  Create a join code to share with your collaborator.
                 </p>
                 <div className="mt-auto space-y-3">
-                  <input
-                    type="text"
-                    value={joinerAddressInput}
-                    onChange={(e) => setJoinerAddressInput(e.target.value)}
-                    placeholder="Collaborator's wallet address (0x...)"
-                    className="input-blocky w-full rounded-lg px-3 py-2.5 font-mono text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleCreateSession}
-                    className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5"
-                    disabled={isConnecting || !joinerAddressInput.trim()}
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Create Session
-                  </button>
+                  {!joinCode ? (
+                    <button
+                      type="button"
+                      onClick={handleCreateSession}
+                      className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5"
+                      disabled={isConnecting}
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                      Create Session
+                    </button>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-lg bg-black/30 p-3 text-center">
+                        <p className="text-xs text-stone-500">Join code</p>
+                        <p className="mt-1 font-mono text-lg text-sky-300">{joinCode}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(joinCode)}
+                        className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2.5"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Copy Join Code
+                      </button>
+                      <p className="text-center text-xs text-stone-500">
+                        {isWaitingForJoiner ? "Waiting for collaborator to join..." : "Share this code to start."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleDisconnect}
+                        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-stone-700 px-4 py-2.5 text-sm text-stone-400 transition-colors hover:bg-stone-800"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -805,26 +1025,30 @@ const CreateProjectPage = () => {
                   <span className="text-base font-semibold text-amber-300">Join</span>
                 </div>
                 <p className="mb-4 text-center text-sm text-stone-400">
-                  Paste the invite code from the host.
+                  Enter the join code from the host.
                 </p>
                 <div className="mt-auto space-y-3">
-                  <textarea
-                    value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value)}
-                    placeholder="Paste invite code here..."
-                    className="input-blocky h-16 w-full resize-none rounded-lg px-3 py-2.5 font-mono text-[10px]"
+                  <input
+                    type="text"
+                    value={joinCodeInput}
+                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                    placeholder="Join code (e.g. A1B2C3)"
+                    className="input-blocky w-full rounded-lg px-3 py-2.5 text-center font-mono text-sm tracking-widest"
                   />
                   <button
                     type="button"
                     onClick={handleJoinWithInvite}
                     className="button-blocky flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2.5"
-                    disabled={isJoining || !inviteCode.trim()}
+                    disabled={isJoining || !joinCodeInput.trim()}
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14" />
                     </svg>
                     Join Session
                   </button>
+                  {isWaitingForInvite && (
+                    <p className="text-center text-xs text-stone-500">Waiting for the host to create the session...</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -887,12 +1111,13 @@ const CreateProjectPage = () => {
                   <svg className="h-4 w-4 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                   </svg>
-                  Share this invite code
+                  Share this join code
                 </p>
                 <button
                   type="button"
-                  onClick={() => copyToClipboard(sessionState.invite!)}
+                  onClick={() => joinCode && copyToClipboard(joinCode)}
                   className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-yellow-800/50 px-3 py-1.5 text-sm font-medium text-yellow-200 transition-colors hover:bg-yellow-800/70"
+                  disabled={!joinCode}
                 >
                   {copied ? (
                     <>
@@ -911,15 +1136,13 @@ const CreateProjectPage = () => {
                   )}
                 </button>
               </div>
-              <textarea
-                readOnly
-                value={sessionState.invite}
-                className="h-20 w-full resize-none rounded-lg bg-black/40 p-3 font-mono text-[10px] text-yellow-200"
-              />
+              <div className="rounded-lg bg-black/40 p-3 text-center font-mono text-xl text-yellow-200">
+                {joinCode || "—"}
+              </div>
             </div>
 
             <p className="text-center text-sm text-stone-500">
-              Send this code to your collaborator. They paste it on their device to join.
+              Send this code to your collaborator. They enter it on their device to join.
             </p>
 
             <button
@@ -1348,7 +1571,13 @@ const CreateProjectPage = () => {
                     type="button"
                     onClick={handleAddCompany}
                     className="button-blocky flex cursor-pointer items-center gap-2 rounded-lg px-5 py-2.5"
-                    disabled={(!isActive && !isInviteReady && !soloMode) || isEditingLocked || (!soloMode && parseFloat(newCompanyStake || "0") > remainingBalance)}
+                    disabled={
+                      (!isActive && !isInviteReady && !soloMode) ||
+                      isEditingLocked ||
+                      (!soloMode &&
+                        remainingBalance > 0 &&
+                        parseFloat(newCompanyStake || "0") > remainingBalance)
+                    }
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -1495,13 +1724,22 @@ const CreateProjectPage = () => {
                                 min="0.01"
                                 step="0.01"
                                 max={soloMode ? undefined : remainingBalance.toString()}
-                                disabled={isEditingLocked || (!soloMode && remainingBalance <= 0) || (!isActive && !isInviteReady && !soloMode)}
+                                disabled={
+                                  isEditingLocked ||
+                                  (!isActive && !isInviteReady && !soloMode)
+                                }
                               />
                               <button
                                 type="button"
                                 onClick={() => handleTopUp(companyName)}
                                 className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50"
-                                disabled={isEditingLocked || (!soloMode && remainingBalance <= 0) || (!soloMode && parseFloat(topUpAmounts[companyName] || "0") > remainingBalance) || (!isActive && !isInviteReady && !soloMode)}
+                                disabled={
+                                  isEditingLocked ||
+                                  (!soloMode &&
+                                    remainingBalance > 0 &&
+                                    parseFloat(topUpAmounts[companyName] || "0") > remainingBalance) ||
+                                  (!isActive && !isInviteReady && !soloMode)
+                                }
                               >
                                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
