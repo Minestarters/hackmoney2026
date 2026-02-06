@@ -1,36 +1,42 @@
 # Minestarters
 
+tl;dr: Off-chain collaborative curation of mining company portfolios, NAV-aware on-chain liquidity, and cross-chain capital rails for mining finance.
+
+## 💡 Why Minestarters
+
+Junior mining exploration is structurally underfunded. Even with stronger commodity prices, exploration budgets in key regions (including parts of Africa) are near decade lows. Operating-level price strength does not reliably become risk capital for early-stage companies. High failure rates and asymmetric risk-reward force investors to deploy large amounts of capital just to diversify, shrinking the pool of suitable backers and leaving fragmented, slow funding routes that strand many high-quality projects.
+
+The path from discovery (exploration) to feasibility, permitting, project finance, construction, and production is long and capital-intensive. Until production, in-ground mineral assets are non-producing, non-cash-flowing, and largely illiquid. That illiquidity drives valuation discounts during exploration and development, raises the cost of capital, and limits funding access. Early investors are locked in for years with no ability to trade, rebalance, or exit before long-term milestones are reached.
+
+### Enter Minestarters
+
+- Collaborative basket curation: Curators (researchers, mining creators, junior executives, or Minestarters) assemble baskets of projects, set allocation weights, and define minimum raise targets. Investors gain diversified exposure by backing expert-led strategies rather than individual high-risk projects. Curators stake tokens to collectively assign weights to projects inside a basket using Yellow Network, enabling fast, gasless, multi-party curation with on-chain settlement only once the basket is finalized.
+
+- NAV tracking: Material legal and financial documents are verified via oracles or required counterparty signatures. Net Asset Value (NAV) is tracked and reflected on-chain, providing real-time transparency and accountability for vault token holders. Each basket issues vault tokens that trade in a Uniswap V4 pool. Custom hooks keep prices aligned with on-chain NAV based on project stage and progress, creating continuous price discovery for traditionally illiquid mining assets. Withdrawals from mining companies are also gated by progress.
+
+- Cross chain capital rails: By deploying on ARC Network, Minestarters enables seamless cross-chain USDC funding and unified settlement without bridging friction, opening access to a global investor base.
+
 ## 📁 Project Structure
 
-This is a **Yarn Workspace** monorepo containing :
+This is a **Yarn Workspace** monorepo containing:
 
 ```
 hackmoney2026/
+├── backend/            # Node/TypeScript API service
 ├── contracts/          # Smart contracts (Foundry/Solidity)
-│   ├── src/           # Contract source files
-│   ├── scripts/       # Deployment scripts
-│   └── test/          # Contract tests
-└── frontend/          # React frontend (Vite + TypeScript)
-    └── src/           # Frontend source code
+│   ├── src/            # Contract source files
+│   ├── scripts/        # Deployment scripts
+│   └── test/           # Contract tests
+├── frontend/           # React frontend (Vite + TypeScript)
+│   ├── public/         # Static assets
+│   └── src/            # Frontend source code
+├── subgraph/           # The Graph subgraph
+│   ├── abis/           # Contract ABIs
+│   ├── schema.graphql  # Subgraph schema
+│   └── src/            # Mapping handlers
+├── lib/                # Shared libs (workspace-level)
+└── render.yaml         # Render deployment config
 ```
-
-## 🛠️ Tech Stack
-
-### Smart Contracts
-
-- **Solidity** ^0.8.24
-- **Foundry** (Forge) for compilation and testing
-- **OpenZeppelin** contracts for security standards
-- Deployed on **ARC Testnet**
-
-### Frontend
-
-- **React** 19.2 with **TypeScript**
-- **Vite** for build tooling
-- **Ethers.js** v6 for blockchain interaction
-- **TailwindCSS** for styling
-- **React Router** for navigation
-- **Recharts** for data visualization
 
 ## 🚀 Getting Started
 
@@ -80,7 +86,7 @@ For more installation options (building from source, Docker, etc.), visit the [o
    yarn install
    ```
 
-   This will install dependencies for both `contracts` and `frontend` workspaces.
+This will install dependencies for the `contracts`, `frontend`, `backend`, and `subgraph` workspaces.
 
 3. **Set up environment variables:**
 
@@ -121,6 +127,11 @@ yarn contracts:test
 yarn contracts:deploy:usdc
 yarn contracts:deploy:factory
 yarn contracts:clean
+
+# Backend
+yarn backend:dev
+yarn backend:build
+yarn backend:start
 
 # Frontend
 yarn frontend:dev
@@ -183,37 +194,18 @@ yarn frontend:lint
 
 The frontend development server runs on `http://localhost:5173` by default.
 
-## 📜 Smart Contracts
+### Backend
 
-### Core Contracts
+```bash
+# Start dev server
+yarn backend:dev
 
-1. **MinestartersFactory.sol**
-   - Factory contract for creating new project vaults
-   - Deploys `BasketVault` instances
-   - Tracks all created projects
+# Build
+yarn backend:build
 
-2. **BasketVault.sol**
-   - Manages individual project fundraising
-   - Handles USDC deposits and share token minting
-   - Manages profit distribution to share holders
-   - Implements three stages: Fundraising, Active, Failed
-
-3. **BasketShareToken.sol**
-   - ERC-20 token representing ownership in a basket
-   - Minted when investors contribute USDC
-   - Used for profit distribution claims
-
-4. **MockUSDC.sol**
-   - Mock USDC token for testing purposes
-
-### Contract Features
-
-- **Weighted Baskets**: Projects can include multiple companies with custom weight distributions
-- **Minimum Raise Goals**: Projects must meet minimum funding thresholds
-- **Deadline-based Fundraising**: Time-limited fundraising periods
-- **Fee Structure**: Configurable raise and profit fees
-- **Profit Distribution**: Automatic profit sharing based on share ownership
-- **Refund Mechanism**: Investors can reclaim funds if minimum raise isn't met
+# Run built server
+yarn backend:start
+```
 
 ## 🌐 Deployment
 
@@ -223,56 +215,6 @@ The contracts are deployed on **ARC Testnet**. Deployment scripts are located in
 - `DeployFactory.s.sol` - Deploys the MinestartersFactory contract
 
 Deployment artifacts are stored in `contracts/broadcast/`.
-
-## 🧪 Testing
-
-```bash
-# Run all contract tests
-yarn contracts:test
-
-# Run with detailed output
-cd contracts && yarn test:verbose
-```
-
-Tests are written using Foundry's testing framework and located in `contracts/test/`.
-
-## 📱 Frontend Pages
-
-- **Home**: Landing page and project overview
-- **Create Project**: Form to create new fundraising campaigns
-- **Project Details**: View individual project information and invest
-- **Calculator**: Financial calculations and projections
-
-## 🔧 Configuration
-
-### Foundry Configuration
-
-See `contracts/foundry.toml` for Solidity compiler settings and paths.
-
-### Vite Configuration
-
-Frontend build configuration is in `frontend/vite.config.ts`.
-
-### TailwindCSS
-
-Styling configuration is in `frontend/tailwind.config.js`.
-
-## 📝 License
-
-ISC
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 🔗 Links
-
-- ARC Testnet Explorer: https://testnet.arcscan.app/
-- Deployed Contracts: See `contracts/broadcast/` for deployment details
 
 ---
 
