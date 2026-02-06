@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { useWallet } from "../context/WalletContext";
 import {
   fetchProjectInfo,
-  fetchFullCompanyData,
   advanceCompanyStage,
+  fetchCompanyDetails,
 } from "../lib/contracts";
 import { formatUsdc, shortAddress } from "../lib/format";
 import { COMPANY_STAGE_LABELS } from "../types";
@@ -18,6 +17,8 @@ import {
 import type { ProjectInfo, CompanyDetails, CompanyDocument } from "../types";
 import { DocumentManager } from "../components/DocumentManager";
 import { useCompanyDocuments } from "../hooks/useCompanyDocuments";
+import type { Address } from "viem";
+import { useEthersProvider } from "../utils/ethers-adapter";
 
 const COMPANY_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
 
@@ -34,7 +35,6 @@ interface RouteParams extends Record<string, string | undefined> {
 export const CompanyDetailsPage = () => {
   const { address, companyIndex: companyIndexStr } = useParams<RouteParams>();
   const navigate = useNavigate();
-  const { provider, signer } = useWallet();
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [company, setCompany] = useState<CompanyDetails | null>(null);
@@ -49,6 +49,8 @@ export const CompanyDetailsPage = () => {
 
   const companyIndex = companyIndexStr ? parseInt(companyIndexStr, 10) : -1;
 
+  const provider = useEthersProvider();
+
   // Fetch documents from subgraph
   const { data: subgraphDocuments, isLoading: documentsLoading } =
     useCompanyDocuments(address, companyIndex);
@@ -61,12 +63,11 @@ export const CompanyDetailsPage = () => {
     let cancelled = false;
 
     const resolveExplorer = async () => {
-      if (!provider) return;
       try {
-        const network = await provider.getNetwork();
+        const network = await provider?.getNetwork();
         if (!cancelled) {
           setExplorerBaseUrl(
-            sanitizeExplorerUrl(getExplorerUrl(network.chainId)),
+            sanitizeExplorerUrl(getExplorerUrl(network?.chainId)),
           );
         }
       } catch (error) {
@@ -87,7 +88,7 @@ export const CompanyDetailsPage = () => {
   // Load data
   useEffect(() => {
     const loadData = async () => {
-      if (!address || !provider || companyIndex < 0) {
+      if (!address || companyIndex < 0) {
         setError("Invalid parameters");
         setLoading(false);
         return;
@@ -100,7 +101,7 @@ export const CompanyDetailsPage = () => {
         // Fetch project info
         let projectInfo: ProjectInfo | null = null;
         try {
-          projectInfo = await fetchProjectInfo(address, provider);
+          projectInfo = await fetchProjectInfo(address as Address);
           setProject(projectInfo);
         } catch (err) {
           console.warn("Failed to fetch project info:", err);
@@ -117,12 +118,7 @@ export const CompanyDetailsPage = () => {
         }
 
         try {
-          companyData = await fetchFullCompanyData(
-            address,
-            companyIndex,
-            NAV_ENGINE_ADDRESS,
-            provider,
-          );
+          companyData = await fetchCompanyDetails(address, companyIndex);
         } catch (err) {
           const message =
             err instanceof Error ? err.message : "Failed to fetch company data";
@@ -141,7 +137,7 @@ export const CompanyDetailsPage = () => {
     };
 
     loadData();
-  }, [address, companyIndex, provider]);
+  }, [address, companyIndex]);
 
   // Update documents when subgraph data is loaded
   useEffect(() => {
@@ -180,11 +176,6 @@ export const CompanyDetailsPage = () => {
   const handleSubmit = useCallback(async () => {
     if (!address || companyIndex < 0 || !company) {
       toast.error("Invalid project or company");
-      return;
-    }
-
-    if (!signer) {
-      toast.error("Please connect your wallet");
       return;
     }
 
@@ -260,23 +251,20 @@ export const CompanyDetailsPage = () => {
         companyIndex,
         yearsToProduction,
         remainingMineLife,
-        signer,
         ipfsHashes,
       );
 
-      if (result.status === "success") {
+      if (result) {
         toast.success(
-          `Stage advanced successfully! Tx: ${result.transactionHash?.slice(0, 10)}...`,
+          `Stage advanced successfully! Tx: ${result?.slice(0, 10)}...`,
         );
 
         // Reload company data
         if (NAV_ENGINE_ADDRESS) {
           try {
-            const updatedCompany = await fetchFullCompanyData(
+            const updatedCompany = await fetchCompanyDetails(
               address,
               companyIndex,
-              NAV_ENGINE_ADDRESS,
-              provider,
             );
             setCompany(updatedCompany);
           } catch (err) {
@@ -296,16 +284,7 @@ export const CompanyDetailsPage = () => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [
-    address,
-    companyIndex,
-    company,
-    isSubmitting,
-    signer,
-    provider,
-    documents,
-    pendingFiles,
-  ]);
+  }, [address, companyIndex, company, isSubmitting, documents, pendingFiles]);
 
   if (loading || documentsLoading) {
     return (

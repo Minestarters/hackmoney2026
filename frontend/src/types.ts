@@ -47,6 +47,15 @@ export type CompanyDetails = {
   floorNavTotalUsd: bigint;
 };
 
+export type CompanyDetailsResponse = {
+  name: string;
+  weight: bigint;
+  resourceTonnes: bigint;
+  inventoryTonnes: bigint;
+  stage: number;
+  navUsd: bigint;
+};
+
 export type CompanyDocument = {
   id: string;
   companyIndex: number;

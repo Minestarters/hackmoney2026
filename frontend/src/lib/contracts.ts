@@ -1,19 +1,17 @@
-import { Contract } from "ethers";
-import type { BrowserProvider, JsonRpcProvider, Signer } from "ethers";
-import { FACTORY_ADDRESS, START_BLOCK, USDC_ADDRESS, NAV_ENGINE_ADDRESS } from "../config";
-import { getContract } from "viem";
+import { FACTORY_ADDRESS, USDC_ADDRESS, NAV_ENGINE_ADDRESS } from "../config";
+import { getContract, type Address } from "viem";
 import {
   basketVaultAbi,
   erc20Abi,
   minestartersFactoryAbi,
   navEngineAbi,
 } from "../contracts/abis";
-import type { ProjectInfo, UserPosition, CompanyDetails } from "../types";
+import type { ProjectInfo, UserPosition, CompanyDetails, CompanyDetailsResponse } from "../types";
 import { publicClient, type WalletClientWithAccount } from "./wagmi";
-import type { Connection } from "wagmi";
+import { fetchLogsInChunks } from "../utils/get_logs";
 
 // Read-only contract getters (use publicClient)
-export const getVaultRead = (address: `0x${string}`) =>
+export const getVaultRead = (address: Address) =>
   getContract({
     address,
     abi: basketVaultAbi,
@@ -22,15 +20,22 @@ export const getVaultRead = (address: `0x${string}`) =>
 
 export const getUsdcRead = () =>
   getContract({
-    address: USDC_ADDRESS as `0x${string}`,
+    address: USDC_ADDRESS as Address,
     abi: erc20Abi,
     client: publicClient,
   });
 
 export const getFactoryRead = () =>
   getContract({
-    address: FACTORY_ADDRESS as `0x${string}`,
+    address: FACTORY_ADDRESS as Address,
     abi: minestartersFactoryAbi,
+    client: publicClient,
+  });
+
+export const getNAVEngineRead = () =>
+  getContract({
+    address: NAV_ENGINE_ADDRESS as Address,
+    abi: navEngineAbi,
     client: publicClient,
   });
 
@@ -44,13 +49,13 @@ export const writeFactory = {
       companyWeights: bigint[];
       minimumRaise: bigint;
       deadline: bigint;
-      withdrawAddress: `0x${string}`;
+      withdrawAddress: Address;
       raiseFeeBps: bigint;
       profitFeeBps: bigint;
     }
   ) => {
     return walletClient.writeContract({
-      address: FACTORY_ADDRESS as `0x${string}`,
+      address: FACTORY_ADDRESS as Address,
       abi: minestartersFactoryAbi,
       functionName: "createProject",
       args: [
@@ -73,13 +78,13 @@ export const writeFactory = {
       companyWeights: bigint[];
       minimumRaise: bigint;
       deadline: bigint;
-      withdrawAddress: `0x${string}`;
+      withdrawAddress: Address;
       raiseFeeBps: bigint;
       profitFeeBps: bigint;
     }
   ) => {
     return walletClient.writeContract({
-      address: FACTORY_ADDRESS as `0x${string}`,
+      address: FACTORY_ADDRESS as Address,
       abi: minestartersFactoryAbi,
       functionName: "createProject",
       args: [
@@ -97,7 +102,7 @@ export const writeFactory = {
 };
 
 export const writeVault = {
-  deposit: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`, amount: bigint) => {
+  deposit: async (walletClient: WalletClientWithAccount, vaultAddress: Address, amount: bigint) => {
     return walletClient.writeContract({
       address: vaultAddress,
       abi: basketVaultAbi,
@@ -105,28 +110,28 @@ export const writeVault = {
       args: [amount],
     });
   },
-  claimProfit: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`) => {
+  claimProfit: async (walletClient: WalletClientWithAccount, vaultAddress: Address) => {
     return walletClient.writeContract({
       address: vaultAddress,
       abi: basketVaultAbi,
       functionName: "claimProfit",
     });
   },
-  refund: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`) => {
+  refund: async (walletClient: WalletClientWithAccount, vaultAddress: Address) => {
     return walletClient.writeContract({
       address: vaultAddress,
       abi: basketVaultAbi,
       functionName: "refund",
     });
   },
-  withdrawRaisedFunds: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`) => {
+  withdrawRaisedFunds: async (walletClient: WalletClientWithAccount, vaultAddress: Address) => {
     return walletClient.writeContract({
       address: vaultAddress,
       abi: basketVaultAbi,
       functionName: "withdrawRaisedFunds",
     });
   },
-  depositProfit: async (walletClient: WalletClientWithAccount, vaultAddress: `0x${string}`, amount: bigint) => {
+  depositProfit: async (walletClient: WalletClientWithAccount, vaultAddress: Address, amount: bigint) => {
     return walletClient.writeContract({
       address: vaultAddress,
       abi: basketVaultAbi,
@@ -137,17 +142,17 @@ export const writeVault = {
 };
 
 export const writeUsdc = {
-  approve: async (walletClient: WalletClientWithAccount, spender: `0x${string}`, amount: bigint) => {
+  approve: async (walletClient: WalletClientWithAccount, spender: Address, amount: bigint) => {
     return walletClient.writeContract({
-      address: USDC_ADDRESS as `0x${string}`,
+      address: USDC_ADDRESS as Address,
       abi: erc20Abi,
       functionName: "approve",
       args: [spender, amount],
     });
   },
-  mint: async (walletClient: WalletClientWithAccount, to: `0x${string}`, amount: bigint) => {
+  mint: async (walletClient: WalletClientWithAccount, to: Address, amount: bigint) => {
     return walletClient.writeContract({
-      address: USDC_ADDRESS as `0x${string}`,
+      address: USDC_ADDRESS as Address,
       abi: erc20Abi,
       functionName: "mint",
       args: [to, amount],
@@ -158,7 +163,7 @@ export const writeUsdc = {
 const normalizeWeights = (weights: readonly bigint[]) => weights.map((w) => Number(w));
 
 export const fetchProjectInfo = async (
-  address: `0x${string}`
+  address: Address
 ): Promise<ProjectInfo> => {
   const vault = getVaultRead(address);
   const info = await vault.read.getProjectInfo();
@@ -232,23 +237,18 @@ export const fetchProjectInfo = async (
 const normalizeAddress = (address: string) => address.trim().toLowerCase();
 
 export const fetchSupporterCount = async (
-  projectAddress: `0x${string}`
+  projectAddress: Address
 ): Promise<number> => {
-  const currentBlock = await publicClient.getBlockNumber();
-  const logs = await publicClient.getLogs({
-    address: projectAddress,
-    event: {
-      type: "event",
-      name: "Deposited",
-      inputs: [
-        { indexed: true, name: "user", type: "address" },
-        { indexed: false, name: "amount", type: "uint256" },
-        { indexed: false, name: "shares", type: "uint256" },
-      ],
-    },
-    fromBlock: BigInt(START_BLOCK),
-    toBlock: currentBlock,
-  });
+  const event = {
+    type: "event",
+    name: "Deposited",
+    inputs: [
+      { indexed: true, name: "user", type: "address" },
+      { indexed: false, name: "amount", type: "uint256" },
+      { indexed: false, name: "shares", type: "uint256" },
+    ],
+  } as const
+  const logs = await fetchLogsInChunks<typeof event>(projectAddress, event);
 
   const uniqueDepositors = new Set<string>();
   for (const log of logs) {
@@ -260,37 +260,33 @@ export const fetchSupporterCount = async (
 };
 
 export const fetchTotalClaimed = async (
-  projectAddress: `0x${string}`
+  projectAddress: Address
 ): Promise<bigint> => {
-  const currentBlock = await publicClient.getBlockNumber();
-  const logs = await publicClient.getLogs({
-    address: projectAddress,
-    event: {
-      type: "event",
-      name: "ProfitClaimed",
-      inputs: [
-        { indexed: true, name: "user", type: "address" },
-        { indexed: false, name: "amount", type: "uint256" },
-      ],
-    },
-    fromBlock: BigInt(START_BLOCK),
-    toBlock: currentBlock,
-  });
+  const event = {
+    type: "event",
+    name: "ProfitClaimed",
+    inputs: [
+      { indexed: true, name: "user", type: "address" },
+      { indexed: false, name: "amount", type: "uint256" },
+    ],
+  } as const
+  const logs = await fetchLogsInChunks<typeof event>(projectAddress, event)
+  console.log('logs for fetchTotalClaimed: ', logs)
 
   return logs.reduce((sum, log) => {
-    const amount = log.args.amount;
+    const amount = log.args.amount
     return amount != null ? sum + amount : sum;
   }, 0n);
 };
 
 export const fetchUserPosition = async (
   project: ProjectInfo,
-  user: `0x${string}`
+  user: Address
 ): Promise<UserPosition> => {
-  const vault = getVaultRead(project.address as `0x${string}`);
+  const vault = getVaultRead(project.address as Address);
   const usdc = getUsdcRead();
   const shareToken = getContract({
-    address: project.shareToken as `0x${string}`,
+    address: project.shareToken as Address,
     abi: erc20Abi,
     client: publicClient,
   });
@@ -311,34 +307,29 @@ export const fetchUserPosition = async (
   };
 };
 
-export const fetchProjectAddresses = async (): Promise<`0x${string}`[]> => {
+export const fetchProjectAddresses = async (): Promise<Address[]> => {
   const factory = getFactoryRead();
 
   try {
-    const addresses = await factory.read.getAllProjects() as `0x${string}`[];
+    const addresses = await factory.read.getAllProjects() as Address[];
     return [...addresses];
   } catch {
     const count = await factory.read.getProjectCount() as bigint;
-    const addresses: `0x${string}`[] = [];
+    const addresses: Address[] = [];
     for (let i = 0n; i < count; i++) {
-      const addr = await factory.read.getProjectAt([i]) as `0x${string}`;
+      const addr = await factory.read.getProjectAt([i]) as Address;
       addresses.push(addr);
     }
     return addresses;
   }
 };
 
-export const getNAVEngine = (address: string, provider: Connection) =>
-  new Contract(address, navEngineAbi, provider);
-
 export const fetchCompanyDetails = async (
   vaultAddress: string,
   companyIndex: number,
-  navEngineAddress: string,
-  provider: BrowserProvider | JsonRpcProvider
 ): Promise<CompanyDetails> => {
-  const navEngine = getNAVEngine(navEngineAddress, provider);
-  const result = await navEngine.getCompany(vaultAddress, companyIndex);
+  const navEngine = getNAVEngineRead();
+  const result = await navEngine.read.getCompany([vaultAddress, companyIndex]) as CompanyDetailsResponse;
 
   return {
     name: result.name,
@@ -356,36 +347,6 @@ export const fetchCompanyDetails = async (
   };
 };
 
-export const fetchFullCompanyData = async (
-  vaultAddress: string,
-  companyIndex: number,
-  navEngineAddress: string,
-  provider: BrowserProvider | JsonRpcProvider
-): Promise<CompanyDetails> => {
-  const navEngine = getNAVEngine(navEngineAddress, provider);
-
-  // Get the basic company info from getCompany
-  const basicInfo = await navEngine.getCompany(vaultAddress, companyIndex);
-
-  // Get the full company struct for all details
-  const fullCompany = await navEngine.companies(vaultAddress, companyIndex);
-
-  return {
-    name: fullCompany.name,
-    weight: Number(fullCompany.weight),
-    resourceTonnes: fullCompany.totalResourceTonnes as bigint,
-    inventoryTonnes: fullCompany.inventoryTonnes as bigint,
-    stage: Number(fullCompany.currentStage),
-    navUsd: basicInfo.navUsd as bigint,
-    totalResourceTonnes: fullCompany.totalResourceTonnes as bigint,
-    recoveryRateBps: Number(fullCompany.recoveryRateBps),
-    yearsToProduction: Number(fullCompany.yearsToProduction),
-    remainingMineLife: Number(fullCompany.remainingMineLife),
-    discountRateBps: Number(fullCompany.discountRateBps),
-    floorNavTotalUsd: fullCompany.floorNavTotalUsd as bigint,
-  };
-};
-
 /**
  * Advance a company to the next stage
  * @param vaultAddress - The address of the vault/project
@@ -400,34 +361,25 @@ export const advanceCompanyStage = async (
   companyIndex: number,
   yearsToProduction: number,
   remainingMineLife: number,
-  signer: Signer,
   ipfsHashes: string[] = []
-): Promise<{
-  transactionHash: string,
-  blockNumber: number,
-  status: "success" | "failed"
-}> => {
-  if (!NAV_ENGINE_ADDRESS) {
-    throw new Error("NAV Engine address not configured");
+): Promise<string | undefined> => {
+  const navEngine = getNAVEngineRead();
+
+  try {
+    // Call advanceCompanyStage on the NAVEngine contract
+    const hash = await navEngine.write.advanceCompanyStage(
+      [
+        vaultAddress,
+        companyIndex,
+        yearsToProduction,
+        remainingMineLife,
+        ipfsHashes
+      ]
+    );
+
+    return hash;
+  } catch (error) {
+    console.error('Error in advanceCompanyStage: ', error)
+    return undefined
   }
-
-  const navEngine = getNAVEngine(NAV_ENGINE_ADDRESS, signer);
-
-  // Call advanceCompanyStage on the NAVEngine contract
-  const tx = await navEngine.advanceCompanyStage(
-    vaultAddress,
-    companyIndex,
-    yearsToProduction,
-    remainingMineLife,
-    ipfsHashes
-  );
-
-  // Wait for transaction to be mined
-  const receipt = await tx.wait();
-
-  return {
-    transactionHash: receipt?.hash,
-    blockNumber: receipt?.blockNumber,
-    status: receipt?.status === 1 ? "success" : "failed",
-  };
 };

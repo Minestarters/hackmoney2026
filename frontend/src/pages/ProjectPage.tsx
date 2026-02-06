@@ -349,11 +349,18 @@ const ProjectPage = () => {
         );
         return;
       }
-      const allowance = await usdcRead.read.allowance([account, project.address as `0x${string}`]);
+      const allowance = await usdcRead.read.allowance([
+        account,
+        project.address as `0x${string}`,
+      ]);
       if (allowance < value) {
         await toast.promise(
           (async () => {
-            const hash = await writeUsdc.approve(walletClient, project.address as `0x${string}`, value);
+            const hash = await writeUsdc.approve(
+              walletClient,
+              project.address as `0x${string}`,
+              value,
+            );
             await publicClient.waitForTransactionReceipt({ hash });
           })(),
           {
@@ -369,7 +376,11 @@ const ProjectPage = () => {
 
       await toast.promise(
         (async () => {
-          const hash = await writeVault.deposit(walletClient, project.address as `0x${string}`, value);
+          const hash = await writeVault.deposit(
+            walletClient,
+            project.address as `0x${string}`,
+            value,
+          );
           await publicClient.waitForTransactionReceipt({ hash });
         })(),
         {
@@ -410,7 +421,10 @@ const ProjectPage = () => {
     try {
       await toast.promise(
         (async () => {
-          const hash = await writeVault.claimProfit(walletClient, project.address as `0x${string}`);
+          const hash = await writeVault.claimProfit(
+            walletClient,
+            project.address as `0x${string}`,
+          );
           await publicClient.waitForTransactionReceipt({ hash });
         })(),
         {
@@ -445,7 +459,10 @@ const ProjectPage = () => {
     try {
       await toast.promise(
         (async () => {
-          const hash = await writeVault.refund(walletClient, project.address as `0x${string}`);
+          const hash = await writeVault.refund(
+            walletClient,
+            project.address as `0x${string}`,
+          );
           await publicClient.waitForTransactionReceipt({ hash });
         })(),
         {
@@ -484,7 +501,10 @@ const ProjectPage = () => {
     try {
       await toast.promise(
         (async () => {
-          const hash = await writeVault.withdrawRaisedFunds(walletClient, project.address as `0x${string}`);
+          const hash = await writeVault.withdrawRaisedFunds(
+            walletClient,
+            project.address as `0x${string}`,
+          );
           await publicClient.waitForTransactionReceipt({ hash });
         })(),
         {
@@ -535,11 +555,18 @@ const ProjectPage = () => {
       }
 
       const usdcRead = getUsdcRead();
-      const allowance = await usdcRead.read.allowance([account, project.address as `0x${string}`]);
+      const allowance = await usdcRead.read.allowance([
+        account,
+        project.address as `0x${string}`,
+      ]);
       if (allowance < value) {
         await toast.promise(
           (async () => {
-            const hash = await writeUsdc.approve(walletClient, project.address as `0x${string}`, value);
+            const hash = await writeUsdc.approve(
+              walletClient,
+              project.address as `0x${string}`,
+              value,
+            );
             await publicClient.waitForTransactionReceipt({ hash });
           })(),
           {
@@ -555,7 +582,11 @@ const ProjectPage = () => {
 
       await toast.promise(
         (async () => {
-          const hash = await writeVault.depositProfit(walletClient, project.address as `0x${string}`, value);
+          const hash = await writeVault.depositProfit(
+            walletClient,
+            project.address as `0x${string}`,
+            value,
+          );
           await publicClient.waitForTransactionReceipt({ hash });
         })(),
         {
