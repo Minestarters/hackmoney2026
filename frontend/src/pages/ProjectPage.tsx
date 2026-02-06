@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
@@ -204,7 +204,6 @@ const CompanyBreakdownItem = ({
 
 const ProjectPage = () => {
   const { address } = useParams<{ address: string }>();
-  const navigate = useNavigate();
   const { provider, signer, account, connect } = useWallet();
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [position, setPosition] = useState<UserPosition | null>(null);

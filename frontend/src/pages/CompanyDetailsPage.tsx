@@ -18,7 +18,6 @@ import {
 import type { ProjectInfo, CompanyDetails, CompanyDocument } from "../types";
 import { DocumentManager } from "../components/DocumentManager";
 import { useCompanyDocuments } from "../hooks/useCompanyDocuments";
-import { useInvalidateKey } from "../hooks/useInvalidateKey";
 
 const COMPANY_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
 
