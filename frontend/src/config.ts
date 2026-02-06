@@ -7,7 +7,7 @@ export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 export const IPFS_GATEWAY_URL = import.meta.env.VITE_IPFS_GATEWAY_URL;
 
-export const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1740165/minestarters-hackmoney/version/latest";
+export const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1740729/hackmoney-2026/version/latest";
 
 const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",

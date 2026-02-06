@@ -68,6 +68,55 @@
   },
   {
     "type": "function",
+    "name": "createProjectWithNAV",
+    "inputs": [
+      {
+        "name": "projectName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "companyNames",
+        "type": "string[]",
+        "internalType": "string[]"
+      },
+      {
+        "name": "companyWeights",
+        "type": "uint256[]",
+        "internalType": "uint256[]"
+      },
+      {
+        "name": "minimumRaise",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "deadline",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "withdrawAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "raiseFeeBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "getAllProjects",
     "inputs": [],
     "outputs": [
@@ -112,6 +161,19 @@
     "stateMutability": "view"
   },
   {
+    "type": "function",
+    "name": "navEngine",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract NAVEngine"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "event",
     "name": "ProjectCreated",
     "inputs": [
@@ -138,6 +200,25 @@
         "type": "string",
         "indexed": false,
         "internalType": "string"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ProjectCreatedWithNAV",
+    "inputs": [
+      {
+        "name": "vault",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "companyCount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
