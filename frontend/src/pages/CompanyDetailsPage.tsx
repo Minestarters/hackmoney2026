@@ -237,8 +237,8 @@ export const CompanyDetailsPage = () => {
       // Update documents state
       setDocuments(uploadedDocs);
 
-      const yearsToProduction = Math.max(0, (company.yearsToProduction || 1) - 1);
-      const remainingMineLife = Math.max(0, company.remainingMineLife || 0);
+      const yearsToProduction = 5;
+      const remainingMineLife = 10;
 
       // Collect IPFS hashes from newly uploaded documents
       const ipfsHashes = uploadedDocs
