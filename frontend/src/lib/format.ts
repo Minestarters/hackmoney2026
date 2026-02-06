@@ -1,4 +1,4 @@
-import { formatUnits } from "ethers";
+import { formatUnits } from "viem";
 
 export const formatUsdc = (value: bigint, decimals = 6) =>
   Number(formatUnits(value, decimals)).toLocaleString(undefined, {
