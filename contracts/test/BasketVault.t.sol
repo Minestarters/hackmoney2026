@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: ISC
 pragma solidity ^0.8.24;
 
-import "forge-std/Test.sol";
-import "../src/BasketVault.sol";
-import "../src/BasketShareToken.sol";
-import "../src/MockUSDC.sol";
+import {Test} from "forge-std/Test.sol";
+import {BasketVault} from "../src/BasketVault.sol";
+import {BasketShareToken} from "../src/BasketShareToken.sol";
+import {MockUSDC} from "../src/MockUSDC.sol";
 
 contract BasketVaultTest is Test {
     BasketVault public vault;
@@ -19,7 +19,6 @@ contract BasketVaultTest is Test {
 
     uint256 public constant MINIMUM_RAISE = 10000 * 1e6;
     uint256 public constant RAISE_FEE_BPS = 200;
-    uint256 public constant PROFIT_FEE_BPS = 500;
     uint256 public constant DAY = 1 days;
 
     function setUp() public {
@@ -45,8 +44,7 @@ contract BasketVaultTest is Test {
             withdrawer,
             MINIMUM_RAISE,
             deadline,
-            RAISE_FEE_BPS,
-            PROFIT_FEE_BPS
+            RAISE_FEE_BPS
         );
         vm.stopPrank();
 
@@ -68,9 +66,10 @@ contract BasketVaultTest is Test {
     function test_Deposit() public {
         uint256 depositAmount = 15000 * 1e6;
         uint256 expectedNet = (depositAmount * (10000 - RAISE_FEE_BPS)) / 10000;
+        uint256 sourceChainId = 1;
 
         vm.prank(investor);
-        vault.deposit(depositAmount);
+        vault.deposit(depositAmount, sourceChainId);
 
         assertEq(vault.totalRaised(), depositAmount);
         assertEq(shareToken.balanceOf(investor), expectedNet);
@@ -78,8 +77,9 @@ contract BasketVaultTest is Test {
 
     function test_WithdrawRaisedFunds() public {
         uint256 depositAmount = 15000 * 1e6;
+        uint256 sourceChainId = 1;
         vm.prank(investor);
-        vault.deposit(depositAmount);
+        vault.deposit(depositAmount, sourceChainId);
 
         uint256 expectedNet = (depositAmount * (10000 - RAISE_FEE_BPS)) / 10000;
         uint256 withdrawerStart = usdc.balanceOf(withdrawer);

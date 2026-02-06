@@ -30,12 +30,14 @@ type Eip1193Error = {
 const ensureCorrectNetwork = async (
   provider: BrowserProvider,
   chainId: number,
-  chainName: string
+  chainName: string,
 ) => {
   const hexChainId = ethers.toBeHex(chainId);
 
   try {
-    await provider.send("wallet_switchEthereumChain", [{ chainId: hexChainId }]);
+    await provider.send("wallet_switchEthereumChain", [
+      { chainId: hexChainId },
+    ]);
     return true;
   } catch (switchError) {
     if ((switchError as Eip1193Error)?.code === 4902) {
@@ -58,7 +60,7 @@ const ensureCorrectNetwork = async (
   }
 
   alert(
-    `Wrong network: please switch your wallet to chain ID ${chainId} to use Minestarters.`
+    `Wrong network: please switch your wallet to chain ID ${chainId} to use Minestarters.`,
   );
 
   return false;
@@ -75,7 +77,7 @@ const WalletContext = createContext<WalletContextState>({
 export const WalletProvider = ({ children }: PropsWithChildren) => {
   const [account, setAccount] = useState<string | null>(null);
   const [provider, setProvider] = useState<BrowserProvider | JsonRpcProvider>(
-    fallbackProvider
+    fallbackProvider,
   );
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -89,7 +91,7 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
     try {
       setIsConnecting(true);
       const browserProvider = new ethers.BrowserProvider(
-        window.ethereum as ethers.Eip1193Provider
+        window.ethereum as ethers.Eip1193Provider,
       );
       const [walletNetwork, fallbackNetwork] = await Promise.all([
         browserProvider.getNetwork(),
@@ -104,7 +106,7 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
         const switched = await ensureCorrectNetwork(
           browserProvider,
           expectedChainId,
-          fallbackNetworkName
+          fallbackNetworkName,
         );
         if (!switched) {
           return;
@@ -147,11 +149,14 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
 
     window.ethereum.on?.("accountsChanged", handleAccountsChanged);
     window.ethereum.on?.("chainChanged", () => {
-      window.location.reload();
+      // window.location.reload();
     });
 
     return () => {
-      window.ethereum?.removeListener?.("accountsChanged", handleAccountsChanged);
+      window.ethereum?.removeListener?.(
+        "accountsChanged",
+        handleAccountsChanged,
+      );
     };
   }, []);
 
@@ -162,11 +167,12 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
 
     const restoreConnection = async () => {
       try {
-        const shouldReconnect = window.localStorage.getItem(LOCAL_STORAGE_KEY) === "1";
+        const shouldReconnect =
+          window.localStorage.getItem(LOCAL_STORAGE_KEY) === "1";
         if (!shouldReconnect) return;
 
         const browserProvider = new ethers.BrowserProvider(
-          window.ethereum as ethers.Eip1193Provider
+          window.ethereum as ethers.Eip1193Provider,
         );
         const [walletNetwork, fallbackNetwork] = await Promise.all([
           browserProvider.getNetwork(),
@@ -180,7 +186,10 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
           return;
         }
 
-        const accounts: string[] = await browserProvider.send("eth_accounts", []);
+        const accounts: string[] = await browserProvider.send(
+          "eth_accounts",
+          [],
+        );
         if (!accounts || accounts.length === 0) {
           window.localStorage.removeItem(LOCAL_STORAGE_KEY);
           return;
@@ -206,10 +215,12 @@ export const WalletProvider = ({ children }: PropsWithChildren) => {
 
   const value = useMemo(
     () => ({ account, provider, signer, connect, isConnecting }),
-    [account, provider, signer, connect, isConnecting]
+    [account, provider, signer, connect, isConnecting],
   );
 
-  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+  return (
+    <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+  );
 };
 
 export const useWallet = () => useContext(WalletContext);

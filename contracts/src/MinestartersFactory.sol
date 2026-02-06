@@ -6,7 +6,7 @@ import {NAVEngine} from "./NAVEngine.sol";
 
 contract MinestartersFactory {
     address[] private projects;
-    address public immutable usdc;
+    address public immutable USDC;
     NAVEngine public navEngine;
 
     event ProjectCreated(address indexed creator, address vault, address token, string name);
@@ -14,10 +14,7 @@ contract MinestartersFactory {
 
     constructor(address usdcToken) {
         require(usdcToken != address(0), "USDC required");
-        usdc = usdcToken;
-        navEngine = new NAVEngine(address(0), address(this));
-        navEngine.setFactory(address(this));
-        navEngine.transferOwnership(msg.sender);
+        USDC = usdcToken;
     }
 
     function createProject(
@@ -27,8 +24,7 @@ contract MinestartersFactory {
         uint256 minimumRaise,
         uint256 deadline,
         address withdrawAddress,
-        uint256 raiseFeeBps,
-        uint256 profitFeeBps
+        uint256 raiseFeeBps
     ) external {
         require(companyNames.length == companyWeights.length, "Invalid companies");
         require(companyNames.length > 0, "No companies");
@@ -36,7 +32,6 @@ contract MinestartersFactory {
         require(deadline > block.timestamp, "Deadline must be future");
         require(withdrawAddress != address(0), "Withdraw address required");
         require(raiseFeeBps <= 10_000, "Invalid raise fee");
-        require(profitFeeBps <= 10_000, "Invalid profit fee");
 
         uint256 totalWeight;
         for (uint256 i = 0; i < companyWeights.length; i++) {
@@ -48,13 +43,12 @@ contract MinestartersFactory {
             projectName,
             companyNames,
             companyWeights,
-            usdc,
+            USDC,
             msg.sender,
             withdrawAddress,
             minimumRaise,
             deadline,
-            raiseFeeBps,
-            profitFeeBps
+            raiseFeeBps
         );
 
         projects.push(address(vault));
@@ -68,8 +62,7 @@ contract MinestartersFactory {
         uint256 minimumRaise,
         uint256 deadline,
         address withdrawAddress,
-        uint256 raiseFeeBps,
-        uint256 profitFeeBps
+        uint256 raiseFeeBps
     ) external returns (address) {
         uint256 len = companyNames.length;
         require(len > 0, "No companies");
@@ -78,7 +71,6 @@ contract MinestartersFactory {
         require(deadline > block.timestamp, "Deadline must be future");
         require(withdrawAddress != address(0), "Withdraw address required");
         require(raiseFeeBps <= 10_000, "Invalid raise fee");
-        require(profitFeeBps <= 10_000, "Invalid profit fee");
 
         uint256 totalWeight;
         for (uint256 i = 0; i < len; i++) {
@@ -90,13 +82,12 @@ contract MinestartersFactory {
             projectName,
             companyNames,
             companyWeights,
-            usdc,
+            USDC,
             msg.sender,
             withdrawAddress,
             minimumRaise,
             deadline,
-            raiseFeeBps,
-            profitFeeBps
+            raiseFeeBps
         );
 
         projects.push(address(vault));

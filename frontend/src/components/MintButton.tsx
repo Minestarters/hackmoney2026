@@ -31,6 +31,8 @@ const MintButton = () => {
 
   const disabled = minting || isConnecting;
 
+  return null;
+
   return (
     <button
       type="button"

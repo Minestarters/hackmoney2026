@@ -3,15 +3,31 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {BasketShareToken, IBasketVault} from "./BasketShareToken.sol";
+import {BasketShareToken} from "./BasketShareToken.sol";
 
 /// @title BasketVault
 /// @notice Manages fundraising, share minting, and profit distribution for a single project.
-contract BasketVault is IBasketVault, ReentrancyGuard {
+contract BasketVault is ReentrancyGuard {
     enum Stage {
         Fundraising,
         Active,
         Failed
+    }
+
+    struct ProjectInfo {
+        string projectName;
+        string[] companies;
+        uint256[] weights;
+        address shareTokenAddress;
+        address projectCreator;
+        address projectWithdrawAddress;
+        uint256 minRaise;
+        uint256 projectDeadline;
+        uint256 raiseFee;
+        uint256 raised;
+        uint256 raiseFeesPaid;
+        bool isFinalized;
+        Stage stage;
     }
 
     string public name;
@@ -23,38 +39,20 @@ contract BasketVault is IBasketVault, ReentrancyGuard {
     uint256 public minimumRaise;
     uint256 public deadline;
     uint256 public raiseFeeBps;
-    uint256 public profitFeeBps;
     uint256 public totalRaised;
     uint256 public accruedRaiseFees;
     uint256 public totalRaiseFeesCollected;
-    uint256 public totalProfit;
-    uint256 public totalProfitFeesCollected;
-    uint256 public profitPerShare;
     bool public finalized;
     uint256 public withdrawnPrincipal;
 
-    IERC20 public immutable usdc;
-
-    mapping(address => uint256) public shareBalances;
-    mapping(address => uint256) public claimedProfits;
-
-    mapping(address => uint256) private profitDebt;
-    mapping(address => uint256) private pendingProfits;
+    IERC20 public immutable USDC;
 
     uint256 private constant BPS_DENOMINATOR = 10_000;
-    uint256 private constant PROFIT_SCALE = 1e18;
 
-    modifier profitsUnlocked() {
-        require(totalRaised >= minimumRaise, "Profit flows unavailable");
-        _;
-    }
-
-    event Deposited(address indexed user, uint256 amount, uint256 shares);
+    event Deposited(address indexed user, uint256 amount, uint256 shares, uint256 sourceChainId);
     event FundsWithdrawn();
     event FundraisingFinalized();
     event Refunded(address indexed user, uint256 amount);
-    event ProfitDeposited(uint256 amount);
-    event ProfitClaimed(address indexed user, uint256 amount);
 
     constructor(
         string memory projectName,
@@ -65,8 +63,7 @@ contract BasketVault is IBasketVault, ReentrancyGuard {
         address _withdrawAddress,
         uint256 _minimumRaise,
         uint256 _deadline,
-        uint256 _raiseFeeBps,
-        uint256 _profitFeeBps
+        uint256 _raiseFeeBps
     ) {
         require(_companyNames.length == _companyWeights.length, "Invalid companies");
         require(_companyNames.length > 0, "No companies");
@@ -74,7 +71,6 @@ contract BasketVault is IBasketVault, ReentrancyGuard {
         require(_withdrawAddress != address(0), "Withdraw address required");
         require(_deadline > block.timestamp, "Deadline must be future");
         require(_raiseFeeBps <= BPS_DENOMINATOR, "Invalid raise fee");
-        require(_profitFeeBps <= BPS_DENOMINATOR, "Invalid profit fee");
 
         uint256 totalWeight;
         for (uint256 i = 0; i < _companyWeights.length; i++) {
@@ -90,18 +86,15 @@ contract BasketVault is IBasketVault, ReentrancyGuard {
         minimumRaise = _minimumRaise;
         deadline = _deadline;
         raiseFeeBps = _raiseFeeBps;
-        profitFeeBps = _profitFeeBps;
-        usdc = IERC20(usdcToken);
+        USDC = IERC20(usdcToken);
 
         string memory tokenName = string.concat(projectName, " Share");
         shareToken = address(new BasketShareToken(tokenName, "MNS", address(this)));
     }
 
-    function deposit(uint256 amount) external nonReentrant {
+    function deposit(uint256 amount, uint256 sourceChainId) external nonReentrant {
         require(!_fundraiseFailed(), "Fundraise closed");
         require(amount > 0, "Amount required");
-
-        _updateUser(msg.sender);
 
         uint256 fee = (amount * raiseFeeBps) / BPS_DENOMINATOR;
         uint256 netAmount = amount - fee;
@@ -109,11 +102,12 @@ contract BasketVault is IBasketVault, ReentrancyGuard {
 
         totalRaised += amount;
         accruedRaiseFees += fee;
-        usdc.transferFrom(msg.sender, address(this), amount);
+        bool success = USDC.transferFrom(msg.sender, address(this), amount);
+        require(success, "Transfer failed");
 
         BasketShareToken(shareToken).mint(msg.sender, netAmount);
 
-        emit Deposited(msg.sender, amount, netAmount);
+        emit Deposited(msg.sender, amount, netAmount, sourceChainId);
 
         _finalizeIfNeeded();
     }
@@ -129,9 +123,11 @@ contract BasketVault is IBasketVault, ReentrancyGuard {
         totalRaiseFeesCollected += fees;
         withdrawnPrincipal += principal + fees;
 
-        usdc.transfer(withdrawAddress, principal);
+        bool success = USDC.transfer(withdrawAddress, principal);
+        require(success, "Transfer failed");
         if (fees > 0) {
-            usdc.transfer(creator, fees);
+            success = USDC.transfer(creator, fees);
+            require(success, "Fee transfer failed");
         }
 
         emit FundsWithdrawn();
@@ -141,112 +137,36 @@ contract BasketVault is IBasketVault, ReentrancyGuard {
         _finalizeIfNeeded();
         require(currentStage() == Stage.Failed, "Refunds unavailable");
 
-        _updateUser(msg.sender);
-
-        uint256 balance = shareBalances[msg.sender];
+        uint256 balance = BasketShareToken(shareToken).balanceOf(msg.sender);
         require(balance > 0, "No shares to refund");
 
         uint256 supply = BasketShareToken(shareToken).totalSupply();
-        uint256 vaultBalance = usdc.balanceOf(address(this));
+        uint256 vaultBalance = USDC.balanceOf(address(this));
         uint256 amount = (vaultBalance * balance) / supply;
 
         BasketShareToken(shareToken).burn(msg.sender, balance);
 
         emit Refunded(msg.sender, amount);
 
-        usdc.transfer(msg.sender, amount);
-    }
-
-    function depositProfit(uint256 amount) external nonReentrant profitsUnlocked {
-        require(amount > 0, "Amount required");
-        require(BasketShareToken(shareToken).totalSupply() > 0, "No shares minted");
-
-        usdc.transferFrom(msg.sender, address(this), amount);
-
-        uint256 fee = (amount * profitFeeBps) / BPS_DENOMINATOR;
-        uint256 netAmount = amount - fee;
-        require(netAmount > 0, "Net zero");
-
-        if (fee > 0) {
-            totalProfitFeesCollected += fee;
-            usdc.transfer(creator, fee);
-        }
-
-        totalProfit += netAmount;
-        profitPerShare += (netAmount * PROFIT_SCALE) / BasketShareToken(shareToken).totalSupply();
-
-        emit ProfitDeposited(netAmount);
-    }
-
-    function claimProfit() external nonReentrant profitsUnlocked {
-        _updateUser(msg.sender);
-
-        uint256 amount = pendingProfits[msg.sender];
-        require(amount > 0, "No profit");
-
-        pendingProfits[msg.sender] = 0;
-        claimedProfits[msg.sender] += amount;
-
-        emit ProfitClaimed(msg.sender, amount);
-
-        usdc.transfer(msg.sender, amount);
+        bool success = USDC.transfer(msg.sender, amount);
+        require(success, "Transfer failed");
     }
 
     /// @notice // TODO: replace with indexer.
-    function getProjectInfo()
-        external
-        view
-        returns (
-            string memory projectName,
-            string[] memory companies,
-            uint256[] memory weights,
-            address shareTokenAddress,
-            address projectCreator,
-            address projectWithdrawAddress,
-            uint256 minRaise,
-            uint256 projectDeadline,
-            uint256 raiseFee,
-            uint256 profitFee,
-            uint256 raised,
-            uint256 profit,
-            uint256 raiseFeesPaid,
-            uint256 profitFeesPaid,
-            uint256 currentProfitPerShare,
-            bool isFinalized,
-            Stage stage
-        )
-    {
-        projectName = name;
-        companies = companyNames;
-        weights = companyWeights;
-        shareTokenAddress = shareToken;
-        projectCreator = creator;
-        projectWithdrawAddress = withdrawAddress;
-        minRaise = minimumRaise;
-        projectDeadline = deadline;
-        raiseFee = raiseFeeBps;
-        profitFee = profitFeeBps;
-        raised = totalRaised;
-        profit = totalProfit;
-        raiseFeesPaid = totalRaiseFeesCollected;
-        profitFeesPaid = totalProfitFeesCollected;
-        currentProfitPerShare = profitPerShare;
-        isFinalized = finalized;
-        stage = currentStage();
-    }
-
-    /// @notice // TODO: replace with indexer.
-    function getUserInfo(address user) external view returns (uint256 shares, uint256 totalClaimed) {
-        shares = shareBalances[user];
-        totalClaimed = claimedProfits[user];
-    }
-
-    function pendingProfit(address user) external view returns (uint256) {
-        uint256 balance = BasketShareToken(shareToken).balanceOf(user);
-        uint256 accrued = (balance * profitPerShare) / PROFIT_SCALE;
-        uint256 debt = profitDebt[user];
-        uint256 owed = accrued > debt ? accrued - debt : 0;
-        return pendingProfits[user] + owed;
+    function getProjectInfo() external view returns (ProjectInfo memory info) {
+        info.projectName = name;
+        info.companies = companyNames;
+        info.weights = companyWeights;
+        info.shareTokenAddress = shareToken;
+        info.projectCreator = creator;
+        info.projectWithdrawAddress = withdrawAddress;
+        info.minRaise = minimumRaise;
+        info.projectDeadline = deadline;
+        info.raiseFee = raiseFeeBps;
+        info.raised = totalRaised;
+        info.raiseFeesPaid = totalRaiseFeesCollected;
+        info.isFinalized = finalized;
+        info.stage = currentStage();
     }
 
     function currentStage() public view returns (Stage) {
@@ -273,29 +193,6 @@ contract BasketVault is IBasketVault, ReentrancyGuard {
         }
 
         principal = available - fees;
-    }
-
-    function beforeShareTransfer(address user) external override {
-        require(msg.sender == shareToken, "Unauthorized");
-        _updateUser(user);
-    }
-
-    function afterShareTransfer(address user) external override {
-        require(msg.sender == shareToken, "Unauthorized");
-        shareBalances[user] = BasketShareToken(shareToken).balanceOf(user);
-        profitDebt[user] = (shareBalances[user] * profitPerShare) / PROFIT_SCALE;
-    }
-
-    function _updateUser(address user) private {
-        uint256 balance = shareBalances[user];
-        uint256 accrued = (balance * profitPerShare) / PROFIT_SCALE;
-        uint256 owed = accrued > profitDebt[user] ? accrued - profitDebt[user] : 0;
-        if (owed > 0) {
-            pendingProfits[user] += owed;
-            profitDebt[user] = accrued;
-        } else {
-            profitDebt[user] = accrued;
-        }
     }
 
     function _finalizeIfNeeded() private {

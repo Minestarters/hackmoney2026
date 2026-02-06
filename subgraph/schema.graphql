@@ -1,0 +1,23 @@
+type Project @entity {
+  id: ID! # Vault Address
+  creator: Bytes!
+  vault: Bytes!
+  token: Bytes!
+  name: String!
+  createdAt: BigInt!
+  transactionHash: Bytes!
+  
+  # State
+  totalRaised: BigInt!
+  isFinalized: Boolean!
+  isFundsWithdrawn: Boolean!
+  holders: [Holder!]! @derivedFrom(field: "project")
+}
+
+type Holder @entity {
+  id: ID! # TokenAddress-UserAddress
+  user: Bytes!
+  project: Project!
+  balance: BigInt!
+  initialDepositChain: BigInt!
+}

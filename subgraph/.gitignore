@@ -1,0 +1,8 @@
+# Gitignore for subgraph directory
+/build/
+/node_modules/
+/dist/
+/.cache/
+*.log
+*.tsbuildinfo
+/generated/

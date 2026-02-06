@@ -7,14 +7,18 @@ export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 export const IPFS_GATEWAY_URL = import.meta.env.VITE_IPFS_GATEWAY_URL;
 
-export const SUBGRAPH_URL = import.meta.env.VITE_SUBGRAPH_URL;
+export const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1740165/minestarters-hackmoney/version/latest";
 
 const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",
   11155111: "https://sepolia.etherscan.io",
+  5042002: "https://testnet.arcscan.app", // Arc Testnet
 };
 
-const FALLBACK_CHAIN_ID = 11155111;
+export const FALLBACK_CHAIN_ID = 5042002;
+
+// Arc Testnet Chain ID for BridgeKit comparison
+export const ARC_TESTNET_CHAIN_ID = 5042002;
 
 const normalizeChainId = (chainId?: number | bigint | null) => {
   if (typeof chainId === "bigint") {
@@ -37,6 +41,11 @@ export const getExplorerUrl = (chainId?: number | bigint | null) => {
   }
 
   return DEFAULT_CHAIN_EXPLORERS[FALLBACK_CHAIN_ID];
+};
+
+export const DISTRIBUTOR_ADDRESSES: Record<number, string> = {
+  5042002: "0x7916aa2b4E351bD3Da48B3BF04a53e4C90e8203f", // Example Arc Testnet address
+  11155111: "0x088F82f3d1aEd9854620c4C3b9d0284d14a54027", // Example Sepolia address
 };
 
 export const STAGE_LABELS: Record<number, string> = {

@@ -2,15 +2,16 @@
 pragma solidity ^0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
-import {MockUSDC} from "../src/MockUSDC.sol";
+import {MinestartersDistributor} from "../src/MinestartersDistributor.sol";
 
-contract DeployUSDC is Script {
+contract DeployMinestartersDistributor is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+
         vm.startBroadcast(deployerPrivateKey);
 
-        MockUSDC usdc = new MockUSDC();
-        console.log("MockUSDC deployed at:", address(usdc));
+        MinestartersDistributor distributor = new MinestartersDistributor();
+        console.log("MinestartersDistributor deployed at:", address(distributor));
 
         vm.stopBroadcast();
     }
