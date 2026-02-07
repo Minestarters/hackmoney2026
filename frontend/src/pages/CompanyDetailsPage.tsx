@@ -254,7 +254,7 @@ export const CompanyDetailsPage = () => {
         companyIndex,
         yearsToProduction,
         remainingMineLife,
-        ipfsHashes,
+        // ipfsHashes,
       );
 
       if (result) {
