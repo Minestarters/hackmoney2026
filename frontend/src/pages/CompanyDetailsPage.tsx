@@ -347,6 +347,8 @@ export const CompanyDetailsPage = () => {
         />
 
 
+
+
         {/* Document Manager */}
         {company && (
           <DocumentManager
