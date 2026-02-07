@@ -3,9 +3,17 @@ type Project @entity {
   creator: Bytes!
   vault: Bytes!
   token: Bytes!
+  withdrawAddress: Bytes!
   name: String!
+  companyNames: [String!]!
+  companyWeights: [BigInt!]!
   createdAt: BigInt!
   transactionHash: Bytes!
+  minimumRaise: BigInt!
+  deadline: BigInt!
+  raiseFeeBps: BigInt!
+  raiseFeesPaid: BigInt!
+  stage: Int!
   
   # State
   totalRaised: BigInt!
