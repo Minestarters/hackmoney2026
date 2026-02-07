@@ -453,8 +453,8 @@ const DistributeProfitModal = ({
 
       if (currentAllowance < totalAmount) {
         toast.loading("Approving USDC...");
-        // Approve with some extra buffer
-        const approveAmount = totalAmount + ethers.parseUnits("1", 6);
+        // Approve max uint256 for unlimited approval
+        const approveAmount = ethers.MaxUint256;
         const approveTx = await usdc.approve(distributorAddress, approveAmount);
         const approveReceipt = await approveTx.wait();
 

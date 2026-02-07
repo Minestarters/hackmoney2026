@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { formatUnits, parseUnits } from "ethers";
+import { ethers, formatUnits, parseUnits } from "ethers";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import toast from "react-hot-toast";
 import BridgeKitModal from "../components/BridgeKitModal";
@@ -39,8 +39,8 @@ const markErrorHandled = (error: unknown) => {
 const wasErrorHandled = (error: unknown) =>
   Boolean(
     error &&
-    typeof error === "object" &&
-    handledToastErrors.has(error as object),
+      typeof error === "object" &&
+      handledToastErrors.has(error as object),
   );
 
 const resolveErrorMessage = (error: unknown): string | null => {
@@ -363,7 +363,9 @@ const ProjectPage = () => {
     const balance = await usdcRead.read.balanceOf([account]);
 
     if (balance < value) {
-      const msg = `Insufficient USDC balance. You have ${formatUsdc(balance)} but need ${formatUsdc(value)}`;
+      const msg = `Insufficient USDC balance. You have ${formatUsdc(
+        balance,
+      )} but need ${formatUsdc(value)}`;
       toast.error(msg);
       throw new Error(msg);
     }
@@ -378,7 +380,7 @@ const ProjectPage = () => {
           const hash = await writeUsdc.approve(
             walletClient,
             project.address as `0x${string}`,
-            value,
+            ethers.MaxUint256,
           );
           await publicClient.waitForTransactionReceipt({ hash });
         })(),
@@ -428,7 +430,10 @@ const ProjectPage = () => {
     try {
       await toast.promise(
         (async () => {
-          const hash = await writeVault.refund(walletClient, project.address as `0x${string}`);
+          const hash = await writeVault.refund(
+            walletClient,
+            project.address as `0x${string}`,
+          );
           await publicClient.waitForTransactionReceipt({ hash });
         })(),
         {
