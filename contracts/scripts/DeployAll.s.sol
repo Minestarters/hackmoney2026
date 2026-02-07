@@ -31,5 +31,91 @@ contract DeployAll is Script {
     uint256 public constant INITIAL_USDC_MINT = 10_000_000e6; // 10M USDC
     uint256 public constant BOT_USDC_MINT = 1_000_000e6; // 1M USDC for bot
 
-    function run() external {}
+    function run() external {
+        // Get deployer from private key
+        uint256 deployerPrivateKey = vm.envOr("DEPLOYER_PRIVATE_KEY", uint256(0));
+        address deployer;
+
+        //local deployment
+        if (deployerPrivateKey == 0) {
+            // Use default anvil account if no key provided
+            deployerPrivateKey = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+            deployer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
+            console.log("Using default Anvil account");
+        } else {
+            deployer = vm.addr(deployerPrivateKey);
+        }
+
+        console.log("Deployer:", deployer);
+        console.log("");
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        // 1. Deploy MockUSDC
+        usdc = new MockUSDC();
+        console.log("MockUSDC:", address(usdc));
+
+        // Mint initial USDC to deployer
+        usdc.mint(deployer, INITIAL_USDC_MINT);
+        console.log("Minted", INITIAL_USDC_MINT / 1e6, "USDC to deployer");
+
+        // Mint USDC to bot for LP operations
+        usdc.mint(LP_MANAGER, BOT_USDC_MINT);
+        console.log("Minted", BOT_USDC_MINT / 1e6, "USDC to bot");
+
+        poolManager = IPoolManager(SEPOLIA_POOL_MANAGER);
+        console.log("PoolManager:", address(poolManager));
+
+        // 3. Deploy MinestartersFactory (creates NAVEngine internally)
+        factory = new MinestartersFactory(address(usdc));
+        navEngine = factory.navEngine();
+        console.log("Factory:", address(factory));
+        console.log("NAVEngine:", address(navEngine));
+
+        // 4. Set initial gold price
+        navEngine.updateGoldPrice(INITIAL_GOLD_PRICE);
+        console.log("Gold price: $", INITIAL_GOLD_PRICE / 1e6);
+
+        // 5. Deploy MinestartersDistributor
+        distributor = new MinestartersDistributor(address(navEngine), address(poolManager));
+        console.log("Distributor:", address(distributor));
+
+        // Set distributor in NAVEngine
+        navEngine.setDistributor(address(distributor));
+        console.log("NAVEngine -> Distributor linked");
+
+        // Set Position Manager for LP repositioning
+        distributor.setPositionManager(SEPOLIA_POSITION_MANAGER);
+        console.log("PositionManager:", SEPOLIA_POSITION_MANAGER);
+
+        // Fund bot with ETH for gas
+        // address(LP_MANAGER).call{value:0.05 ether}("");
+
+        // Fund Distributor with USDC for rebalance swaps
+        usdc.mint(address(distributor), BOT_USDC_MINT);
+        console.log("Minted", BOT_USDC_MINT / 1e6, "USDC to Distributor");
+
+        vm.stopBroadcast();
+
+        _printSummary(deployer);
+    }
+
+    function _printSummary(address deployer) internal view {
+        console.log("USDC:", address(usdc));
+        console.log("PoolManager:", address(poolManager));
+        console.log("MinestartersFactory:", address(factory));
+        console.log("NAVEngine:", address(navEngine));
+        console.log("Distributor:", address(distributor));
+        console.log("*Minestarters**");
+        console.log("Configuration:");
+        console.log("Gold Price: $", INITIAL_GOLD_PRICE / 1e6);
+        console.log("Deployer USDC:", INITIAL_USDC_MINT / 1e6);
+        console.log("*Minestarters**");
+        console.log("For lp_manager.py, add to .env:");
+        console.log("FACTORY_ADDRESS=", address(factory));
+        console.log("DISTRIBUTOR_ADDRESS=", address(distributor));
+        console.log("POOL_MANAGER_ADDRESS=", address(poolManager));
+        console.log("NAV_ENGINE_ADDRESS=", address(navEngine));
+        console.log("USDC_ADDRESS=", address(usdc));
+    }
 }
