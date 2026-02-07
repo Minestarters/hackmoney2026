@@ -1,33 +1,24 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Pie, PieChart, Cell, ResponsiveContainer } from "recharts";
-import { FACTORY_ADDRESS, STAGE_LABELS } from "../config";
-import { fetchProjectAddresses, fetchProjectInfo } from "../lib/contracts";
+import { STAGE_LABELS } from "../config";
 import { formatUsdc } from "../lib/format";
-import type { ProjectInfo } from "../types";
+import { getHomeProjects, type HomeProject } from "../lib/subgraph";
 
 const colors = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
 
 const HomePage = () => {
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [projects, setProjects] = useState<HomeProject[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!FACTORY_ADDRESS) {
-      setError("Set VITE_FACTORY_ADDRESS to load projects");
-      return;
-    }
-
     const load = async () => {
       setLoading(true);
       setError(null);
       try {
-        const addresses = await fetchProjectAddresses();
-        const infos = await Promise.all(
-          addresses.map((addr) => fetchProjectInfo(addr))
-        );
-        setProjects(infos);
+        const homeProjects = await getHomeProjects();
+        setProjects(homeProjects);
       } catch (e) {
         console.error(e);
         setError("Failed to load projects");
