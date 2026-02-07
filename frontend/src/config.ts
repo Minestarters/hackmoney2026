@@ -6,7 +6,7 @@ export const EXPLORER_URL = import.meta.env.VITE_EXPLORER_URL || "";
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 export const IPFS_GATEWAY_URL = import.meta.env.VITE_IPFS_GATEWAY_URL;
 
-export const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1740729/hackmoney-2026/version/latest";
+export const SUBGRAPH_URL = import.meta.env.VITE_SUBGRAPH_URL || "";
 
 export const START_BLOCK = Number(import.meta.env.VITE_START_BLOCK || "0");
 export const YELLOW_WS_URL =

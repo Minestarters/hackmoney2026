@@ -406,18 +406,15 @@ export const fetchUserPosition = async (
 };
 
 export const fetchProjectAddresses = async (): Promise<`0x${string}`[]> => {
-  try {
-    const addresses = await getProjectsList();
-    return addresses as `0x${string}`[];
-  } catch (e) {
-    console.error("Subgraph failed, falling back to RPC", e);
-  }
-
   const factory = getFactoryRead();
   try {
     const addresses = (await factory.read.getAllProjects()) as `0x${string}`[];
     return [...addresses];
-  } catch {
+  } catch (rpcError) {
+    console.error("Factory getAllProjects failed, trying getProjectAt loop", rpcError);
+  }
+
+  try {
     const count = (await factory.read.getProjectCount()) as bigint;
     const addresses: `0x${string}`[] = [];
     for (let i = 0n; i < count; i++) {
@@ -425,6 +422,16 @@ export const fetchProjectAddresses = async (): Promise<`0x${string}`[]> => {
       addresses.push(addr);
     }
     return addresses;
+  } catch (rpcError) {
+    console.error("Factory enumeration failed, falling back to subgraph", rpcError);
+  }
+
+  try {
+    const addresses = await getProjectsList();
+    return addresses as `0x${string}`[];
+  } catch (subgraphError) {
+    console.error("Subgraph fallback failed", subgraphError);
+    return [];
   }
 };
 
