@@ -24,9 +24,20 @@ const HomePage = () => {
       setError(null);
       try {
         const addresses = await fetchProjectAddresses();
-        const infos = await Promise.all(
+        const infoResults = await Promise.allSettled(
           addresses.map((addr) => fetchProjectInfo(addr))
         );
+        const infos = infoResults
+          .filter((result): result is PromiseFulfilledResult<ProjectInfo> => result.status === "fulfilled")
+          .map((result) => result.value);
+
+        if (infos.length !== addresses.length) {
+          console.warn("Some projects failed to load", {
+            total: addresses.length,
+            loaded: infos.length,
+          });
+        }
+
         setProjects(infos);
       } catch (e) {
         console.error(e);
