@@ -31,3 +31,6 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+
+      - name: Run Workspace Tests
+        run: yarn workspaces run test
