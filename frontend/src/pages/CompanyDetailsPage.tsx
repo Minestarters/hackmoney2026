@@ -346,9 +346,6 @@ export const CompanyDetailsPage = () => {
           stage={company?.stage || 0}
         />
 
-
-
-
         {/* Document Manager */}
         {company && (
           <DocumentManager
