@@ -280,7 +280,11 @@ type ProjectInfoLike = {
 
 const normalizeProjectInfo = (info: unknown): ProjectInfoLike => {
   if (Array.isArray(info)) {
-    const isMainShape = info.length >= 17;
+    // Contract returns ProjectInfo struct with 13 fields:
+    // 0: projectName, 1: companies, 2: weights, 3: shareTokenAddress,
+    // 4: projectCreator, 5: projectWithdrawAddress, 6: minRaise,
+    // 7: projectDeadline, 8: raiseFee, 9: raised, 10: raiseFeesPaid,
+    // 11: isFinalized, 12: stage
     return {
       projectName: info[0] as string,
       companies: info[1] as string[],
@@ -291,10 +295,10 @@ const normalizeProjectInfo = (info: unknown): ProjectInfoLike => {
       minRaise: info[6] as bigint,
       projectDeadline: info[7] as bigint,
       raiseFee: info[8] as bigint,
-      raised: (isMainShape ? info[10] : info[9]) as bigint,
-      raiseFeesPaid: (isMainShape ? info[12] : info[10]) ?? 0n,
-      isFinalized: Boolean(isMainShape ? info[15] : info[11]),
-      stage: Number(isMainShape ? info[16] : (info[12] ?? 0)),
+      raised: info[9] as bigint,
+      raiseFeesPaid: info[10] as bigint ?? 0n,
+      isFinalized: Boolean(info[11]),
+      stage: Number(info[12] ?? 0),
     };
   }
   const typed = info as ProjectInfoLike;
@@ -508,31 +512,31 @@ export const fetchCompanyDetails = async (
  * @param companyIndex - The index of the company within the vault
  * @param yearsToProduction - Years until production starts
  * @param remainingMineLife - Remaining mine life in years
- * @param signer - The signer to execute the transaction
  */
 export const advanceCompanyStage = async (
   vaultAddress: string,
   companyIndex: number,
   yearsToProduction: number,
   remainingMineLife: number,
-  ipfsHashes: string[] = [],
 ): Promise<string | undefined> => {
   const walletClient = await getWalletClient();
 
   if (!walletClient) return
 
   // Call advanceCompanyStage on the NAVEngine contract
-  const hash = await getNAVEngineWrite(
-    walletClient,
-    'advanceCompanyStage',
-    [
+  // Use manual gas limit to avoid inflated gas estimation
+  const hash = await walletClient.writeContract({
+    address: NAV_ENGINE_ADDRESS as `0x${string}`,
+    abi: navEngineAbi,
+    functionName: 'advanceCompanyStage',
+    args: [
       vaultAddress,
       companyIndex,
       yearsToProduction,
       remainingMineLife,
-      ipfsHashes
-    ]
-  );
+    ],
+    gas: 5_000_000n, // Manual gas limit to avoid estimation exceeding block limit
+  });
   return hash
 
 };

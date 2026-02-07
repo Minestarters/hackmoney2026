@@ -118,12 +118,6 @@
         "type": "uint8",
         "indexed": false,
         "internalType": "enum NAVEngine.Stage"
-      },
-      {
-        "name": "ipfsHashes",
-        "type": "string[]",
-        "indexed": false,
-        "internalType": "string[]"
       }
     ],
     "anonymous": false
@@ -299,11 +293,6 @@
         "name": "newRemainingMineLife",
         "type": "uint32",
         "internalType": "uint32"
-      },
-      {
-        "name": "ipfsHashes",
-        "type": "string[]",
-        "internalType": "string[]"
       }
     ],
     "outputs": [],
