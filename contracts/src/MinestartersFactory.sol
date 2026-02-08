@@ -15,6 +15,9 @@ contract MinestartersFactory {
     constructor(address usdcToken) {
         require(usdcToken != address(0), "USDC required");
         USDC = usdcToken;
+        navEngine = new NAVEngine(address(0), address(this));
+        navEngine.setFactory(address(this));
+        navEngine.transferOwnership(msg.sender);
     }
 
     function createProject(

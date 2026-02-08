@@ -112,6 +112,43 @@ contract BasketVault is ReentrancyGuard {
         _finalizeIfNeeded();
     }
 
+    /**
+     * @notice Deposits USDC on behalf of a specific user.
+     * @param user The address that will receive the minted shares.
+     * @param amount The total USDC amount to deposit.
+     * @param sourceChainId The ID of the chain where the funds originated.
+     */
+    function depositFor(
+        address user, 
+        uint256 amount, 
+        uint256 sourceChainId
+    ) external nonReentrant {
+        require(!_fundraiseFailed(), "Fundraise closed");
+        require(amount > 0, "Amount required");
+        require(user != address(0), "Invalid user address");
+
+        uint256 fee = (amount * raiseFeeBps) / BPS_DENOMINATOR;
+        uint256 netAmount = amount - fee;
+        require(netAmount > 0, "Net zero");
+
+        totalRaised += amount;
+        accruedRaiseFees += fee;
+
+        // STRATEGY: 
+        // Pull USDC from 'user'. 
+        // For this to work in Multicall, the 'user' must have 
+        // already approved THIS contract (not the Multicall contract).
+        bool success = USDC.transferFrom(user, address(this), amount);
+        require(success, "Transfer failed");
+
+        // Mint shares to the 'user' instead of msg.sender
+        BasketShareToken(shareToken).mint(user, netAmount);
+
+        emit Deposited(user, amount, netAmount, sourceChainId);
+
+        _finalizeIfNeeded();
+    }
+
     function withdrawRaisedFunds() external nonReentrant {
         _finalizeIfNeeded();
         // TODO: DRY

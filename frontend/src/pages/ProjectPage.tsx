@@ -24,6 +24,7 @@ import {
 import { formatBpsAsPercent, formatUsdc, shortAddress } from "../lib/format";
 import { publicClient, getWalletClient } from "../lib/wagmi";
 import type { ProjectInfo, UserPosition } from "../types";
+import { basketVaultAbi } from "../contracts/abis";
 
 const PIE_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
 const sanitizeExplorerUrl = (url: string) => url.replace(/\/$/, "");
@@ -858,6 +859,22 @@ const ProjectPage = () => {
         showAmount={true}
         initialAmount="0"
         onContractMethod={handleDepositContract}
+        multiCallSteps={[
+          {
+            target: address as `0x${string}`,
+            amountArgIndex: 1, // amount is the second argument in depositFor
+            chainIdArgIndex: 2, // chainId is the third argument in depositFor
+            callData: {
+              abi: basketVaultAbi,
+              functionName: "depositFor",
+              args: [
+                account,
+                0, // amount will be filled in by the modal
+                0, // chainId will be filled in by the modal
+              ],
+            },
+          },
+        ]}
       />
 
       <BridgeKitModal

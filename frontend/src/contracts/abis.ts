@@ -3,7 +3,26 @@ import basketVaultAbi from "./BasketVault.json";
 import minestartersFactoryAbi from "./MinestartersFactory.json";
 import minestartersDistributor from "./MinestartersDistributor.json";
 import navEngineAbi from "./NAVEngine.json";
+import multicall3Abi from "./Multicall3.json"
+import messageTransmitterAbi from "./MessageTransmitter.json"
 
+const tokenMessengerAbi = [
+  {
+    type: "function",
+    name: "depositForBurn",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "destinationDomain", type: "uint32" },
+      { name: "mintRecipient", type: "bytes32" },
+      { name: "burnToken", type: "address" },
+      { name: "destinationCaller", type: "bytes32" },
+      { name: "maxFee", type: "uint256" },
+      { name: "minFinalityThreshold", type: "uint32" },
+    ],
+    outputs: [],
+  },
+];
 
 const erc20Abi = [
   {
@@ -59,4 +78,4 @@ const erc20Abi = [
   },
 ] as const;
 
-export { basketVaultAbi, basketShareTokenAbi, minestartersFactoryAbi, minestartersDistributor, erc20Abi, navEngineAbi }
+export { messageTransmitterAbi, multicall3Abi, tokenMessengerAbi, basketVaultAbi, basketShareTokenAbi, minestartersFactoryAbi, minestartersDistributor, erc20Abi, navEngineAbi }

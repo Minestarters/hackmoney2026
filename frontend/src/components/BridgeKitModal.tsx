@@ -24,7 +24,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { ethers } from "ethers";
+import { Contract, ethers } from "ethers";
 import toast from "react-hot-toast";
 import {
   Blockchain,
@@ -35,12 +35,32 @@ import { createEthersAdapterFromProvider } from "@circle-fin/adapter-ethers-v6";
 import {
   BRIDGEKIT_SUPPORTED_TESTNETS,
   getChainIcon,
+  MULTICALL3_ADDRESSES,
   type ChainInfo,
 } from "../lib/bridgeChains";
 import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { USDC_ADDRESS, ARC_TESTNET_CHAIN_ID } from "../config";
+import { USDC_ADDRESS, ARC_TESTNET_CHAIN_ID, FACTORY_ADDRESS } from "../config";
 import type { ProjectInfo } from "../types";
+import { DEFAULT_CHAIN_ID, getWalletClient } from "../lib/wagmi";
+import {
+  getMulticall3ForWrite,
+  getTokenMessengerForWrite,
+  getUsdcReadByAddress,
+} from "../lib/contracts";
+import { encodeFunctionData } from "viem";
+import { messageTransmitterAbi } from "../contracts/abis";
+
+import { chain } from "../lib/wagmi";
+import { arcTestnet } from "viem/chains";
+import { ArcTestnet } from "@circle-fin/bridge-kit/chains";
+import {
+  getTransactionReceipt,
+  switchChain,
+  waitForTransactionReceipt,
+} from "viem/actions";
+
+const DEFAULT_CHAIN = chain;
 
 export type BridgeMode = "before" | "after";
 
@@ -55,6 +75,12 @@ type BridgeKitModalProps = {
   showAmount?: boolean;
   initialAmount?: string;
   onContinue?: (amount: string, chain: ChainInfo) => void | Promise<void>;
+  multiCallSteps?: {
+    target: `0x${string}`;
+    callData: any;
+    amountArgIndex?: number; // If provided, will replace the argument at this index with the deposit amount
+    chainIdArgIndex?: number; // If provided, will replace the argument at this index with the chainId
+  }[]; // For additional multicall steps after completeBurn
   // For custom contract methods
   onContractMethod?: (
     amount: string,
@@ -67,8 +93,8 @@ const handledToastErrors = new WeakSet<object>();
 const wasErrorHandled = (error: unknown) =>
   Boolean(
     error &&
-    typeof error === "object" &&
-    handledToastErrors.has(error as object),
+      typeof error === "object" &&
+      handledToastErrors.has(error as object),
   );
 
 const resolveErrorMessage = (error: unknown): string | null => {
@@ -114,6 +140,43 @@ const getRevertMessage = (error: unknown) => {
   return raw;
 };
 
+async function retrieveAttestation(domain: string, transactionHash: string) {
+  console.log("Retrieving attestation...");
+  const url = `https://iris-api-sandbox.circle.com/v2/messages/${domain}?transactionHash=${transactionHash}`;
+  while (true) {
+    try {
+      const response = await fetch(url, { method: "GET" });
+
+      if (!response.ok) {
+        if (response.status !== 404) {
+          const text = await response.text().catch(() => "");
+          console.error(
+            "Error fetching attestation:",
+            `${response.status} ${response.statusText}${
+              text ? ` - ${text}` : ""
+            }`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        continue;
+      }
+
+      const data = await response.json();
+
+      if (data?.messages?.[0]?.status === "complete") {
+        console.log("Attestation retrieved successfully!");
+        return data.messages[0];
+      }
+      console.log("Waiting for attestation...");
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error fetching attestation:", message);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+  }
+}
+
 const BridgeKitModal = ({
   isOpen,
   onClose,
@@ -125,6 +188,7 @@ const BridgeKitModal = ({
   initialAmount = "0",
   onContinue,
   onContractMethod,
+  multiCallSteps = [],
 }: BridgeKitModalProps) => {
   const { isConnected } = useAccount();
   const { connect } = useConnect();
@@ -160,23 +224,220 @@ const BridgeKitModal = ({
   };
 
   const executeBridge = async (chain: ChainInfo) => {
-    const kit = new BridgeKit();
-    const adapter = await createEthersAdapterFromProvider({
-      provider: window.ethereum as ethers.Eip1193Provider,
-    });
-
     toast.success("Bridge Initiated");
 
     if (bridgeMode === "before") {
-      await kit.bridge({
-        from: {
-          adapter,
-          chain: chain.chain as BridgeChainIdentifier,
-        },
-        to: { adapter, chain: Blockchain.Arc_Testnet },
-        amount: depositAmount,
-      });
+      const tokenMessengerAddress = chain?.cctp?.contracts?.v2?.tokenMessenger;
+      const usdcAddress = chain?.usdcAddress;
+      const multicall3Address = MULTICALL3_ADDRESSES[chain.chainId];
+      const messageTransmitter = chain?.cctp?.contracts?.v2?.messageTransmitter;
+
+      const domain = chain.cctp.domain;
+
+      if (
+        !tokenMessengerAddress ||
+        !usdcAddress ||
+        !multicall3Address ||
+        domain === undefined ||
+        domain === null ||
+        !messageTransmitter
+      ) {
+        toast.error(
+          `Bridging from ${chain.name} is not supported at this time`,
+        );
+        console.error(
+          "Missing Either one of BridgeKit configuration for chain:",
+          {
+            tokenMessengerAddress,
+            usdcAddress,
+            multicall3Address,
+            domain,
+            messageTransmitter,
+          },
+        );
+        return;
+      }
+
+      let client = await getWalletClient();
+
+      try {
+        console.log("Switching to ", chain.chainId, " for bridging");
+        await switchChain(client as any, { id: chain.chainId });
+
+        console.log("Switched to ", chain.name, " for bridging");
+
+        client = await getWalletClient();
+
+        const usdcContract = getUsdcReadByAddress(usdcAddress, client!);
+
+        console.log(client?.chain);
+
+        const currentAllowance = await usdcContract.read.allowance([
+          client!.account.address,
+          tokenMessengerAddress,
+        ]);
+
+        if (currentAllowance < ethers.parseUnits(depositAmount, 6)) {
+          toast.loading("Approving USDC for bridging...", { id: "approve" });
+
+          const approveTx = await usdcContract.write.approve([
+            tokenMessengerAddress,
+            ethers.MaxUint256,
+          ]);
+
+          const receipt = await waitForTransactionReceipt(client!, {
+            hash: approveTx,
+          });
+
+          if (!receipt || receipt.status !== "success") {
+            toast.error("Approval failed");
+            return;
+          } else {
+            toast.success("Approval successful", { id: "approve" });
+          }
+        }
+
+        toast("Initiating Bridge...");
+
+        const tokenMessengerContract = getTokenMessengerForWrite(
+          tokenMessengerAddress,
+          client!,
+        );
+
+        const burnTx = await tokenMessengerContract.write.depositForBurn([
+          ethers.parseUnits(depositAmount, 6),
+          ArcTestnet.cctp.domain,
+          `0x000000000000000000000000${client!.account.address.slice(2)}`,
+          usdcAddress,
+          "0x0000000000000000000000000000000000000000000000000000000000000000",
+          500n,
+          1000, // minFinalityThreshold (1000 or less for Fast Transfer)
+        ]);
+
+        const receipt = await waitForTransactionReceipt(client!, {
+          hash: burnTx,
+        });
+
+        if (!receipt || receipt.status !== "success") {
+          toast.error("Bridge transaction failed");
+          return;
+        }
+
+        toast.success("Bridge transaction sent. Waiting for confirmation...");
+
+        const attestation = await retrieveAttestation(
+          domain.toString(),
+          receipt.transactionHash,
+        );
+
+        await switchChain(client as any, { id: DEFAULT_CHAIN_ID });
+
+        client = await getWalletClient();
+
+        if (showAmount && multiCallSteps.length > 0) {
+          // Check USDC Approval
+
+          const usdcContract = getUsdcReadByAddress(USDC_ADDRESS, client!);
+
+          const currentAllowance = await usdcContract.read.allowance([
+            client!.account.address,
+            multiCallSteps[0].target,
+          ]);
+
+          if (currentAllowance < ethers.parseUnits(depositAmount, 6)) {
+            toast.loading(
+              "Approving USDC for " + ctaLabel + " transaction...",
+              { id: "approve" },
+            );
+
+            const approveTx = await usdcContract.write.approve([
+              multiCallSteps[0].target,
+              ethers.MaxUint256,
+            ]);
+
+            const receipt = await waitForTransactionReceipt(client!, {
+              hash: approveTx,
+            });
+
+            if (!receipt || receipt.status !== "success") {
+              toast.error("Approval failed");
+              return;
+            } else {
+              toast.success("Approval successful", { id: "approve" });
+            }
+          }
+        }
+
+        const multiCall3Contract = getMulticall3ForWrite(
+          multicall3Address,
+          client!,
+        );
+
+        const additionalCallSteps = multiCallSteps.map((step) => {
+          if (step.amountArgIndex) {
+            const amount = ethers.parseUnits(depositAmount, 6);
+
+            step.callData.args[step.amountArgIndex] = amount;
+
+            delete step.amountArgIndex;
+          }
+
+          if (step.chainIdArgIndex) {
+            const chainId = chain.chainId;
+
+            step.callData.args[step.chainIdArgIndex] = chainId;
+
+            delete step.chainIdArgIndex;
+          }
+
+          return {
+            target: step.target,
+            callData: encodeFunctionData(step.callData),
+          };
+        });
+
+        const calls = [
+          {
+            target: messageTransmitter,
+            callData: encodeFunctionData({
+              abi: messageTransmitterAbi,
+              functionName: "receiveMessage",
+              args: [
+                attestation.message as `0x${string}`,
+                attestation.attestation as `0x${string}`,
+              ],
+            })!,
+          },
+          ...additionalCallSteps,
+        ];
+
+        const multicallTx = await multiCall3Contract.write.aggregate([calls]);
+
+        const bridgeReceipt = await waitForTransactionReceipt(client!, {
+          hash: multicallTx,
+        });
+
+        if (!bridgeReceipt || bridgeReceipt.status !== "success") {
+          toast.error("Finalizing bridge transaction failed");
+          return;
+        }
+
+        if (calls.length > 1) {
+          toast.success(getButtonLabel() + " completed.");
+        } else {
+          toast.success("Bridge completed.");
+        }
+      } catch (err) {
+        toast.error(getButtonLabel() + " failed");
+        console.error("Bridge initiation failed", err);
+        await switchChain(client as any, { id: DEFAULT_CHAIN_ID });
+      }
     } else {
+      const kit = new BridgeKit();
+      const adapter = await createEthersAdapterFromProvider({
+        provider: window.ethereum as ethers.Eip1193Provider,
+      });
+
       await kit.bridge({
         from: {
           adapter,
@@ -185,9 +446,9 @@ const BridgeKitModal = ({
         to: { adapter, chain: chain.chain as BridgeChainIdentifier },
         amount: depositAmount,
       });
-    }
 
-    toast.success("Bridge Completed");
+      toast.success("Bridge Completed");
+    }
   };
 
   const executeContractMethod = async (chainId: number | bigint) => {
@@ -236,7 +497,9 @@ const BridgeKitModal = ({
       if (bridgeMode === "before" && !isArcTestnet) {
         // Bridge first, then execute contract method
         await executeBridge(chain);
-        await executeContractMethod(chain.chainId);
+        if (multiCallSteps.length === 0) {
+          await executeContractMethod(chain.chainId);
+        }
       } else if (bridgeMode === "after" && !isArcTestnet) {
         // Execute contract method first, then bridge
         await executeContractMethod(chain.chainId);
