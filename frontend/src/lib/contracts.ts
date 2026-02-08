@@ -156,6 +156,21 @@ export const writeFactory = {
       ],
     });
   },
+  depositFor: async (
+    walletClient: WalletClientWithAccount,
+    vaultAddress: `0x${string}`,
+    user: `0x${string}`,
+    amount: bigint,
+    sourceChainId?: number | bigint,
+  ) => {
+    const args = getDepositArgs(amount, sourceChainId);
+    return walletClient.writeContract({
+      address: FACTORY_ADDRESS as `0x${string}`,
+      abi: minestartersFactoryAbi,
+      functionName: "depositFor",
+      args: [vaultAddress, user, ...args],
+    });
+  },
 };
 
 export const writeVault = {

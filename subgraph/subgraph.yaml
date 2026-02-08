@@ -6,7 +6,7 @@ dataSources:
     name: MinestartersFactory
     network: arc-testnet
     source:
-      address: "0xD540687736a498F2CF1801072711a455fFB1794E"
+      address: "0xce6d296E298f43860710F098B6Dd495E320094F7"
       abi: MinestartersFactory
       startBlock: 25854689
     mapping:
@@ -26,7 +26,7 @@ dataSources:
     name: NAVEngine
     network: arc-testnet
     source:
-      address: "0x595bC30baC431961353F2cE6D602B030966da86a"
+      address: "0xc932B7898280A25CA9DB5b2B638D4aBf70CB7ecF"
       abi: NAVEngine
       startBlock: 25854689
     mapping:

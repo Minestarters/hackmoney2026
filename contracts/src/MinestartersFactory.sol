@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BasketVault} from "./BasketVault.sol";
 import {NAVEngine} from "./NAVEngine.sol";
 
@@ -47,6 +48,7 @@ contract MinestartersFactory {
             companyNames,
             companyWeights,
             USDC,
+            address(this),
             msg.sender,
             withdrawAddress,
             minimumRaise,
@@ -86,6 +88,7 @@ contract MinestartersFactory {
             companyNames,
             companyWeights,
             USDC,
+            address(this),
             msg.sender,
             withdrawAddress,
             minimumRaise,
@@ -107,6 +110,22 @@ contract MinestartersFactory {
 
         emit ProjectCreatedWithNAV(address(vault), len);
         return address(vault);
+    }
+
+    function depositFor(
+        address vault,
+        address user,
+        uint256 amount,
+        uint256 sourceChainId
+    ) external {
+        require(vault != address(0), "Vault required");
+        require(user != address(0), "Invalid user address");
+        require(amount > 0, "Amount required");
+
+        bool success = IERC20(USDC).transferFrom(user, vault, amount);
+        require(success, "Transfer failed");
+
+        BasketVault(vault).depositForFromFactory(user, amount, sourceChainId);
     }
 
     function getAllProjects() external view returns (address[] memory) {

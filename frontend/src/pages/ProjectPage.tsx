@@ -9,6 +9,7 @@ import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import {
   EXPLORER_URL,
+  FACTORY_ADDRESS,
   STAGE_LABELS,
   USDC_ADDRESS,
   getExplorerUrl,
@@ -17,6 +18,7 @@ import {
   fetchProjectInfo,
   fetchSupporterCount,
   fetchUserPosition,
+  writeFactory,
   writeVault,
   writeUsdc,
   getUsdcRead,
@@ -24,7 +26,7 @@ import {
 import { formatBpsAsPercent, formatUsdc, shortAddress } from "../lib/format";
 import { publicClient, getWalletClient } from "../lib/wagmi";
 import type { ProjectInfo, UserPosition } from "../types";
-import { basketVaultAbi } from "../contracts/abis";
+import { minestartersFactoryAbi } from "../contracts/abis";
 
 const PIE_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
 const sanitizeExplorerUrl = (url: string) => url.replace(/\/$/, "");
@@ -353,6 +355,10 @@ const ProjectPage = () => {
       toast.error("Set VITE_USDC_ADDRESS for deposits");
       return;
     }
+    if (!FACTORY_ADDRESS) {
+      toast.error("Set VITE_FACTORY_ADDRESS for deposits");
+      return;
+    }
     const walletClient = await getWalletClient();
     if (!walletClient) {
       toast.error("Could not get wallet");
@@ -373,14 +379,14 @@ const ProjectPage = () => {
 
     const allowance = await usdcRead.read.allowance([
       account,
-      project.address as `0x${string}`,
+      FACTORY_ADDRESS as `0x${string}`,
     ]);
     if (allowance < value) {
       await toast.promise(
         (async () => {
           const hash = await writeUsdc.approve(
             walletClient,
-            project.address as `0x${string}`,
+            FACTORY_ADDRESS as `0x${string}`,
             ethers.MaxUint256,
           );
           await publicClient.waitForTransactionReceipt({ hash });
@@ -398,9 +404,10 @@ const ProjectPage = () => {
 
     await toast.promise(
       (async () => {
-        const hash = await writeVault.deposit(
+        const hash = await writeFactory.depositFor(
           walletClient,
           project.address as `0x${string}`,
+          account as `0x${string}`,
           value,
           chainId,
         );
@@ -861,13 +868,14 @@ const ProjectPage = () => {
         onContractMethod={handleDepositContract}
         multiCallSteps={[
           {
-            target: address as `0x${string}`,
-            amountArgIndex: 1, // amount is the second argument in depositFor
-            chainIdArgIndex: 2, // chainId is the third argument in depositFor
+            target: FACTORY_ADDRESS as `0x${string}`,
+            amountArgIndex: 2, // amount is the third argument in depositFor
+            chainIdArgIndex: 3, // chainId is the fourth argument in depositFor
             callData: {
-              abi: basketVaultAbi,
+              abi: minestartersFactoryAbi,
               functionName: "depositFor",
               args: [
+                address as `0x${string}`,
                 account,
                 0, // amount will be filled in by the modal
                 0, // chainId will be filled in by the modal
