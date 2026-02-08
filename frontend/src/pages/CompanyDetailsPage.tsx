@@ -47,7 +47,7 @@ export const CompanyDetailsPage = () => {
     sanitizeExplorerUrl(getExplorerUrl()),
   );
 
-  const {isConnected, chainId} = useConnection()
+  const { isConnected, chainId } = useConnection();
 
   const companyIndex = companyIndexStr ? parseInt(companyIndexStr, 10) : -1;
 
@@ -65,9 +65,7 @@ export const CompanyDetailsPage = () => {
 
       try {
         if (!cancelled) {
-          setExplorerBaseUrl(
-            sanitizeExplorerUrl(getExplorerUrl(chainId)),
-          );
+          setExplorerBaseUrl(sanitizeExplorerUrl(getExplorerUrl(chainId)));
         }
       } catch (error) {
         console.error("Failed to determine explorer URL", error);
@@ -117,10 +115,7 @@ export const CompanyDetailsPage = () => {
         }
 
         try {
-          companyData = await fetchCompanyDetails(
-            address,
-            companyIndex,
-          );
+          companyData = await fetchCompanyDetails(address, companyIndex);
         } catch (err) {
           const message =
             err instanceof Error ? err.message : "Failed to fetch company data";
@@ -241,10 +236,14 @@ export const CompanyDetailsPage = () => {
       const remainingMineLife = 10;
 
       // Collect IPFS hashes from newly uploaded documents
-      const ipfsHashes = uploadedDocs
+      uploadedDocs
         .filter((doc) => doc.ipfsHash)
         .map((doc) => doc.ipfsHash || "");
 
+      ///TODO::use ipfsHashes in advanceCompanyStage contracts
+      // const ipfsHashes = uploadedDocs
+      //   .filter((doc) => doc.ipfsHash)
+      //   .map((doc) => doc.ipfsHash || "");
       // Show progress
       toast.loading("Advancing company stage on-chain...");
 
@@ -294,7 +293,7 @@ export const CompanyDetailsPage = () => {
     isSubmitting,
     documents,
     pendingFiles,
-    isConnected
+    isConnected,
   ]);
 
   if (loading || documentsLoading) {
@@ -339,7 +338,7 @@ export const CompanyDetailsPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-stone-950 to-stone-900">
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-8">
-        <HeroSection 
+        <HeroSection
           companyName={company?.name || ""}
           companyColor={companyColor}
           projectName={project?.name || ""}
@@ -399,103 +398,107 @@ export const CompanyDetailsPage = () => {
   );
 };
 
-const HeroSection:FC<{stage: number, companyName: string, companyColor: string, projectName: string}> = ({stage, companyName, companyColor, projectName}) => {
-  const navigate = useNavigate()
+const HeroSection: FC<{
+  stage: number;
+  companyName: string;
+  companyColor: string;
+  projectName: string;
+}> = ({ stage, companyName, companyColor, projectName }) => {
+  const navigate = useNavigate();
   return (
     <>
       {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <button
-            onClick={() => navigate(-1)}
-            className="rounded bg-stone-700 px-3 py-2 text-xs font-medium text-stone-200 hover:bg-stone-600 transition-colors"
+      <div className="mb-6 flex items-center justify-between">
+        <button
+          onClick={() => navigate(-1)}
+          className="rounded bg-stone-700 px-3 py-2 text-xs font-medium text-stone-200 hover:bg-stone-600 transition-colors"
+        >
+          ← Back
+        </button>
+      </div>
+
+      {/* Company Info Card */}
+      <div className="mb-6 rounded border-4 border-dirt bg-stone-900/80 p-6 backdrop-blur-sm">
+        <div className="mb-8 flex items-start gap-4">
+          {/* Retro Company Avatar */}
+          <div
+            className="flex h-12 w-12 items-center justify-center rounded-md border-2 border-stone-700 shadow-inner"
+            style={{ backgroundColor: companyColor }}
           >
-            ← Back
-          </button>
-        </div>
-
-        {/* Company Info Card */}
-        <div className="mb-6 rounded border-4 border-dirt bg-stone-900/80 p-6 backdrop-blur-sm">
-          <div className="mb-8 flex items-start gap-4">
-            {/* Retro Company Avatar */}
-            <div
-              className="flex h-12 w-12 items-center justify-center rounded-md border-2 border-stone-700 shadow-inner"
-              style={{ backgroundColor: companyColor }}
-            >
-               <span className="text-xl font-black text-stone-900/50 mix-blend-overlay">
-                  {companyName.charAt(0)}
-               </span>
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-bold tracking-tight text-stone-100 uppercase">
-                {companyName}
-              </h1>
-              <p className="flex items-center gap-2 text-sm font-medium text-stone-500">
-                <span className="text-amber-500/80">{projectName}</span>
-              </p>
-            </div>
+            <span className="text-xl font-black text-stone-900/50 mix-blend-overlay">
+              {companyName.charAt(0)}
+            </span>
           </div>
 
-          {/* New Timeline Section */}
-          <div className="mt-8 px-0">
-            <ProjectTimeline currentStage={stage} />
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl font-bold tracking-tight text-stone-100 uppercase">
+              {companyName}
+            </h1>
+            <p className="flex items-center gap-2 text-sm font-medium text-stone-500">
+              <span className="text-amber-500/80">{projectName}</span>
+            </p>
           </div>
         </div>
+
+        {/* New Timeline Section */}
+        <div className="mt-8 px-0">
+          <ProjectTimeline currentStage={stage} />
+        </div>
+      </div>
     </>
-  )
-}
+  );
+};
 
 const ProjectTimeline = ({ currentStage = 0 }) => {
   const stages = [
-    { 
-      id: 0, 
-      label: 'Exploration', 
-      icon: Telescope, 
-      color: 'text-blue-400', 
-      activeBorder: 'border-blue-500',
-      activeShadow: 'shadow-[0_0_20px_rgba(14,165,233,0.3)]',
-      activeBg: 'bg-blue-500/10',
-      hoverAnimation: 'group-hover:animate-scan origin-bottom'
+    {
+      id: 0,
+      label: "Exploration",
+      icon: Telescope,
+      color: "text-blue-400",
+      activeBorder: "border-blue-500",
+      activeShadow: "shadow-[0_0_20px_rgba(14,165,233,0.3)]",
+      activeBg: "bg-blue-500/10",
+      hoverAnimation: "group-hover:animate-scan origin-bottom",
     },
-    { 
-      id: 1, 
-      label: 'Permits', 
-      icon: ScrollText, 
-      color: 'text-amber-400', 
-      activeBorder: 'border-amber-500',
-      activeShadow: 'shadow-[0_0_20px_rgba(245,158,11,0.3)]',
-      activeBg: 'bg-amber-500/10',
-      hoverAnimation: 'group-hover:animate-float'
+    {
+      id: 1,
+      label: "Permits",
+      icon: ScrollText,
+      color: "text-amber-400",
+      activeBorder: "border-amber-500",
+      activeShadow: "shadow-[0_0_20px_rgba(245,158,11,0.3)]",
+      activeBg: "bg-amber-500/10",
+      hoverAnimation: "group-hover:animate-float",
     },
-    { 
-      id: 2, 
-      label: 'Construction', 
-      icon: Pickaxe, 
-      color: 'text-orange-400', 
-      activeBorder: 'border-orange-500',
-      activeShadow: 'shadow-[0_0_20px_rgba(249,115,22,0.3)]',
-      activeBg: 'bg-orange-500/10',
-      hoverAnimation: 'group-hover:animate-hammer origin-bottom-left'
+    {
+      id: 2,
+      label: "Construction",
+      icon: Pickaxe,
+      color: "text-orange-400",
+      activeBorder: "border-orange-500",
+      activeShadow: "shadow-[0_0_20px_rgba(249,115,22,0.3)]",
+      activeBg: "bg-orange-500/10",
+      hoverAnimation: "group-hover:animate-hammer origin-bottom-left",
     },
-    { 
-      id: 3, 
-      label: 'Production', 
-      icon: Gem, 
-      color: 'text-emerald-400', 
-      activeBorder: 'border-emerald-500',
-      activeShadow: 'shadow-[0_0_20px_rgba(16,185,129,0.3)]',
-      activeBg: 'bg-emerald-500/10',
-      hoverAnimation: 'group-hover:animate-shine'
+    {
+      id: 3,
+      label: "Production",
+      icon: Gem,
+      color: "text-emerald-400",
+      activeBorder: "border-emerald-500",
+      activeShadow: "shadow-[0_0_20px_rgba(16,185,129,0.3)]",
+      activeBg: "bg-emerald-500/10",
+      hoverAnimation: "group-hover:animate-shine",
     },
   ];
 
-  const isProjectComplete = currentStage === stages.length - 1
+  const isProjectComplete = currentStage === stages.length - 1;
 
   return (
     <div className="w-full py-10 px-4">
       {/* Container needs relative positioning to act as the anchor for absolute elements */}
       <div className="relative mx-auto max-w-4xl">
-
         {/* --- STAGES ICON LAYER (Foreground) --- */}
         {/* z-10 ensures these sit ON TOP of the lines */}
         <div className="relative z-10 flex justify-between">
@@ -504,73 +507,88 @@ const ProjectTimeline = ({ currentStage = 0 }) => {
             const isActive = index === currentStage;
             const isCompleted = index < currentStage;
             const isFuture = index >= currentStage;
-            const isLast = index === (stages.length - 1)
-            
+            const isLast = index === stages.length - 1;
+
             return (
               <>
-                <div 
-                  key={stage.id} 
+                <div
+                  key={stage.id}
                   className="group flex flex-col items-center cursor-default"
-                  style={{ width: '4rem' }} 
+                  style={{ width: "4rem" }}
                 >
                   {/* ICON BOX */}
-                  <div 
+                  <div
                     className={`
                       relative flex h-14 w-14 items-center justify-center rounded-xl border-2 transition-all duration-500 ease-out
                       z-20
-                      ${isActive 
-                        ? `${stage.activeBorder} ${stage.color} scale-110 ${stage.activeShadow} bg-stone-900` 
-                        : isCompleted 
-                          ? 'border-green-700 text-green-500 bg-green-900' // Completed: Dark bg, dimmed text
-                          : 'border-cyan-800/75 text-cyan-700/75 bg-cyan-950/75' // Future: Darker bg, dark text
+                      ${
+                        isActive
+                          ? `${stage.activeBorder} ${stage.color} scale-110 ${stage.activeShadow} bg-stone-900`
+                          : isCompleted
+                          ? "border-green-700 text-green-500 bg-green-900" // Completed: Dark bg, dimmed text
+                          : "border-cyan-800/75 text-cyan-700/75 bg-cyan-950/75" // Future: Darker bg, dark text
                       }
                     `}
                   >
                     {/* Inner Glow (Active only) */}
                     {isActive && (
-                      <div className={`absolute inset-0 rounded-xl ${stage.activeBg} blur-md`} />
+                      <div
+                        className={`absolute inset-0 rounded-xl ${stage.activeBg} blur-md`}
+                      />
                     )}
 
                     {/* Icon SVG */}
-                    <Icon 
-                      size={isActive ? 24 : 20} 
+                    <Icon
+                      size={isActive ? 24 : 20}
                       strokeWidth={isActive ? 2.5 : 2}
-                      className={`transition-all duration-300 ${stage.hoverAnimation}`} 
+                      className={`transition-all duration-300 ${stage.hoverAnimation}`}
                     />
                   </div>
 
                   {/* TEXT LABEL */}
-                  <div className={`
+                  <div
+                    className={`
                     mt-4 font-mono text-xs font-bold tracking-widest uppercase transition-all duration-300 text-center whitespace-nowrap
-                    ${isActive 
-                      ? 'text-white translate-y-0 opacity-100' 
-                      : isCompleted 
-                        ? 'text-stone-500' 
-                        : 'text-stone-700'
+                    ${
+                      isActive
+                        ? "text-white translate-y-0 opacity-100"
+                        : isCompleted
+                        ? "text-stone-500"
+                        : "text-stone-700"
                     }
-                  `}>
+                  `}
+                  >
                     {stage.label}
                   </div>
 
                   {/* ACTIVE DOT INDICATOR */}
-                  <div className={`
+                  <div
+                    className={`
                       mt-2 h-1.5 w-1.5 rounded-full transition-all duration-500
-                      ${isActive ? 'bg-white shadow-[0_0_10px_white] scale-100 opacity-100' : 'scale-0 opacity-0'}
+                      ${
+                        isActive
+                          ? "bg-white shadow-[0_0_10px_white] scale-100 opacity-100"
+                          : "scale-0 opacity-0"
+                      }
                     `}
                   />
                 </div>
 
                 {/* progress line */}
-                {
-                  !isLast && (
-                    <hr className={`h-0 flex-1 border-t-2 rounded-full mt-6 ${isFuture ? "border-dotted" : ""} ${isProjectComplete ? "border-green-700" : "border-white/55"}`} />
-                  )
-                }
+                {!isLast && (
+                  <hr
+                    className={`h-0 flex-1 border-t-2 rounded-full mt-6 ${
+                      isFuture ? "border-dotted" : ""
+                    } ${
+                      isProjectComplete ? "border-green-700" : "border-white/55"
+                    }`}
+                  />
+                )}
               </>
             );
           })}
         </div>
       </div>
     </div>
-  )
+  );
 };
