@@ -1,5 +1,5 @@
 import { http, createConfig } from "wagmi";
-import { localhost, arcTestnet } from "wagmi/chains";
+import { arcTestnet } from "wagmi/chains";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, createWalletClient, custom, defineChain } from "viem";
 import type { Account, Chain, Transport, WalletClient } from "viem";

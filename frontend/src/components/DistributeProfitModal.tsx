@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Contract, ethers, type Eip1193Provider } from "ethers";
+import { ethers, type Eip1193Provider } from "ethers";
 import toast from "react-hot-toast";
 import {
   Blockchain,
@@ -11,7 +11,6 @@ import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { DISTRIBUTOR_ADDRESSES } from "../config";
 import { formatUsdc } from "../lib/format";
-import { erc20Abi, minestartersDistributor } from "../contracts/abis";
 import { subgraphQuery } from "../lib/subgraph";
 import type { ProjectInfo } from "../types";
 import {

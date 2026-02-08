@@ -24,7 +24,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Contract, ethers } from "ethers";
+import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import {
   Blockchain,
@@ -40,7 +40,7 @@ import {
 } from "../lib/bridgeChains";
 import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { USDC_ADDRESS, ARC_TESTNET_CHAIN_ID, FACTORY_ADDRESS } from "../config";
+import { USDC_ADDRESS, ARC_TESTNET_CHAIN_ID } from "../config";
 import type { ProjectInfo } from "../types";
 import { DEFAULT_CHAIN_ID, getWalletClient } from "../lib/wagmi";
 import {
@@ -51,16 +51,8 @@ import {
 import { encodeFunctionData } from "viem";
 import { messageTransmitterAbi } from "../contracts/abis";
 
-import { chain } from "../lib/wagmi";
-import { arcTestnet } from "viem/chains";
 import { ArcTestnet } from "@circle-fin/bridge-kit/chains";
-import {
-  getTransactionReceipt,
-  switchChain,
-  waitForTransactionReceipt,
-} from "viem/actions";
-
-const DEFAULT_CHAIN = chain;
+import { switchChain, waitForTransactionReceipt } from "viem/actions";
 
 export type BridgeMode = "before" | "after";
 

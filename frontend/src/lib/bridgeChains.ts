@@ -17,7 +17,7 @@ import {
   WorldChainSepolia,
   XDCApothem,
 } from "@circle-fin/bridge-kit/chains";
-import { arbitrumSepolia, arcTestnet, avalancheFuji, baseSepolia, codexTestnet, inkSepolia, lineaSepolia, monadTestnet, optimismSepolia, plumeTestnet, polygonAmoy, seiTestnet, sepolia, sonicTestnet, unichainSepolia, worldchainSepolia, xdcTestnet } from "viem/chains";
+import { arbitrumSepolia, arcTestnet, avalancheFuji, baseSepolia, codexTestnet, inkSepolia, lineaSepolia, monadTestnet, optimismSepolia, plumeTestnet, polygonAmoy, seiTestnet, sepolia, unichainSepolia, worldchainSepolia, xdcTestnet } from "viem/chains";
 
 // All supported chains from BridgeKit
 export const BRIDGEKIT_SUPPORTED_CHAINS = [
