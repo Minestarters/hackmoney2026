@@ -3,8 +3,11 @@ import { getContract } from "viem";
 import {
   basketVaultAbi,
   erc20Abi,
+  minestartersDistributor,
   minestartersFactoryAbi,
+  multicall3Abi,
   navEngineAbi,
+  tokenMessengerAbi,
 } from "../contracts/abis";
 import type { ProjectInfo, UserPosition, CompanyDetails } from "../types";
 import { getWalletClient, publicClient, type WalletClientWithAccount } from "./wagmi";
@@ -16,6 +19,34 @@ export const getVaultRead = (address: `0x${string}`) =>
     address,
     abi: basketVaultAbi,
     client: publicClient,
+  });
+
+export const getTokenMessengerForWrite = (address: `0x${string}`, client: WalletClientWithAccount) =>
+  getContract({
+    address,
+    abi: tokenMessengerAbi,
+    client: client,
+  });
+
+export const getMulticall3ForWrite = (address: `0x${string}`, client: WalletClientWithAccount) =>
+  getContract({
+    address,
+    abi: multicall3Abi,
+    client: client,
+  });
+
+export const getUsdcReadByAddress = (address: `0x${string}`, client: WalletClientWithAccount) =>
+  getContract({
+    address,
+    abi: erc20Abi,
+    client,
+  });
+
+export const getDistributorForWrite = (address: `0x${string}`, client: WalletClientWithAccount) =>
+  getContract({
+    address,
+    abi: minestartersDistributor,
+    client,
   });
 
 export const getUsdcRead = () =>
@@ -108,7 +139,6 @@ export const writeFactory = {
       deadline: bigint;
       withdrawAddress: `0x${string}`;
       raiseFeeBps: bigint;
-      profitFeeBps: bigint;
     },
   ) => {
     return walletClient.writeContract({
@@ -123,8 +153,22 @@ export const writeFactory = {
         args.deadline,
         args.withdrawAddress,
         args.raiseFeeBps,
-        args.profitFeeBps,
       ],
+    });
+  },
+  depositFor: async (
+    walletClient: WalletClientWithAccount,
+    vaultAddress: `0x${string}`,
+    user: `0x${string}`,
+    amount: bigint,
+    sourceChainId?: number | bigint,
+  ) => {
+    const args = getDepositArgs(amount, sourceChainId);
+    return walletClient.writeContract({
+      address: FACTORY_ADDRESS as `0x${string}`,
+      abi: minestartersFactoryAbi,
+      functionName: "depositFor",
+      args: [vaultAddress, user, ...args],
     });
   },
 };

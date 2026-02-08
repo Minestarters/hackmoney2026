@@ -58,9 +58,9 @@ contract NAVEngineTest is Test {
             address(usdc),
             address(this),
             address(this),
+            address(this),
             1,
             block.timestamp + 1 days,
-            0,
             0
         );
 
@@ -95,9 +95,9 @@ contract NAVEngineTest is Test {
             address(usdc),
             address(this),
             address(this),
+            address(this),
             1,
             block.timestamp + 1 days,
-            0,
             0
         );
 
@@ -210,12 +210,12 @@ contract NAVEngineTest is Test {
             companyNames,
             weights,
             address(usdc),
+            address(this),
             creator,
             withdrawAddr,
             100_000e6,
             block.timestamp + 7 days,
-            200,
-            500
+            200
         );
 
         usdc.mint(investor1, 200_000e6);
@@ -223,12 +223,12 @@ contract NAVEngineTest is Test {
 
         vm.startPrank(investor1);
         usdc.approve(address(realVault), type(uint256).max);
-        realVault.deposit(150_000e6);
+        realVault.deposit(150_000e6, 1);
         vm.stopPrank();
 
         vm.startPrank(investor2);
         usdc.approve(address(realVault), type(uint256).max);
-        realVault.deposit(50_000e6);
+        realVault.deposit(50_000e6, 1);
         vm.stopPrank();
 
         uint256 totalShares = IERC20(realVault.shareToken()).totalSupply();

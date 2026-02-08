@@ -40,6 +40,7 @@ contract BasketVaultTest is Test {
             companies,
             weights,
             address(usdc),
+            address(this),
             creator,
             withdrawer,
             MINIMUM_RAISE,

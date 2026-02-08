@@ -5,7 +5,6 @@ import {
   BaseSepolia,
   CodexTestnet,
   EthereumSepolia,
-  HyperEVMTestnet,
   InkTestnet,
   LineaSepolia,
   MonadTestnet,
@@ -18,16 +17,16 @@ import {
   WorldChainSepolia,
   XDCApothem,
 } from "@circle-fin/bridge-kit/chains";
+import { arbitrumSepolia, arcTestnet, avalancheFuji, baseSepolia, codexTestnet, inkSepolia, lineaSepolia, monadTestnet, optimismSepolia, plumeTestnet, polygonAmoy, seiTestnet, sepolia, unichainSepolia, worldchainSepolia, xdcTestnet } from "viem/chains";
 
 // All supported chains from BridgeKit
 export const BRIDGEKIT_SUPPORTED_CHAINS = [
-  ArbitrumSepolia,
   ArcTestnet,
+  ArbitrumSepolia,
   AvalancheFuji,
   BaseSepolia,
   CodexTestnet,
   EthereumSepolia,
-  HyperEVMTestnet,
   InkTestnet,
   LineaSepolia,
   MonadTestnet,
@@ -39,7 +38,26 @@ export const BRIDGEKIT_SUPPORTED_CHAINS = [
   UnichainSepolia,
   WorldChainSepolia,
   XDCApothem,
-];
+] as const;
+
+export const MULTICALL3_ADDRESSES: Record<number, `0x${string}`> = {
+  [ArcTestnet.chainId]: arcTestnet.contracts.multicall3.address,
+  [ArbitrumSepolia.chainId]: arbitrumSepolia.contracts.multicall3.address,
+  [AvalancheFuji.chainId]: avalancheFuji.contracts.multicall3.address,
+  [BaseSepolia.chainId]: baseSepolia.contracts.multicall3.address,
+  [CodexTestnet.chainId]: codexTestnet.contracts.multicall3.address,
+  [EthereumSepolia.chainId]: sepolia.contracts.multicall3.address,
+  [InkTestnet.chainId]: inkSepolia.contracts.multicall3.address,
+  [LineaSepolia.chainId]: lineaSepolia.contracts.multicall3.address,
+  [MonadTestnet.chainId]: monadTestnet.contracts.multicall3.address,
+  [OptimismSepolia.chainId]: optimismSepolia.contracts.multicall3.address,
+  [PlumeTestnet.chainId]: plumeTestnet.contracts.multicall3.address,
+  [PolygonAmoy.chainId]: polygonAmoy.contracts.multicall3.address,
+  [SeiTestnet.chainId]: seiTestnet.contracts.multicall3.address,
+  [UnichainSepolia.chainId]: unichainSepolia.contracts.multicall3.address,
+  [WorldChainSepolia.chainId]: worldchainSepolia.contracts.multicall3.address,
+  [XDCApothem.chainId]: xdcTestnet.contracts.multicall3.address,
+}
 
 
 export const getChainIcon = (chainName: string) => {
@@ -61,7 +79,6 @@ export const getChainIcon = (chainName: string) => {
     "Sei Testnet": "⚡",
     "Plume Testnet": "🪶",
     "Monad Testnet": "━",
-    "HyperEVM Testnet": "━",
     "Ink Testnet": "━",
     "Codex Testnet": "━",
   };
@@ -83,6 +100,16 @@ export const getChainNameAndRPC = (
   const chain = BRIDGEKIT_SUPPORTED_CHAINS.find((c) => c.chainId === chainId);
   if (chain) {
     return { name: chain.name, rpc: chain.rpcEndpoints[0] };
+  }
+  return null;
+};
+
+export const getChainById = (
+  chainId: number,
+): ChainInfo | null => {
+  const chain = BRIDGEKIT_SUPPORTED_CHAINS.find((c) => c.chainId === chainId);
+  if (chain) {
+    return chain;
   }
   return null;
 };

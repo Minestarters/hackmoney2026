@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Contract, ethers, type Eip1193Provider } from "ethers";
+import { ethers, type Eip1193Provider } from "ethers";
 import toast from "react-hot-toast";
 import {
   Blockchain,
@@ -11,10 +11,17 @@ import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { DISTRIBUTOR_ADDRESSES } from "../config";
 import { formatUsdc } from "../lib/format";
-import { minestartersDistributor } from "../contracts/abis";
 import { subgraphQuery } from "../lib/subgraph";
 import type { ProjectInfo } from "../types";
-import { BRIDGEKIT_SUPPORTED_CHAINS, getChainIcon, getChainNameAndRPC } from "../lib/bridgeChains";
+import {
+  BRIDGEKIT_SUPPORTED_CHAINS,
+  getChainIcon,
+  getChainNameAndRPC,
+} from "../lib/bridgeChains";
+import { switchChain, waitForTransactionReceipt } from "viem/actions";
+import { DEFAULT_CHAIN_ID, getWalletClient } from "../lib/wagmi";
+import { getDistributorForWrite, getUsdcReadByAddress } from "../lib/contracts";
+import type { Address } from "viem";
 
 type DistributionStep = "amount" | "breakdown" | "bridge" | "payout";
 
@@ -239,6 +246,10 @@ const DistributeProfitModal = ({
 
           const amountStr = ethers.formatUnits(chain.totalAmount, 6);
 
+          const client = await getWalletClient();
+
+          await switchChain(client!, { id: DEFAULT_CHAIN_ID }); // Switch to Arc Testnet for bridging
+
           await kit.bridge({
             from: {
               adapter,
@@ -337,37 +348,17 @@ const DistributeProfitModal = ({
     try {
       // Step 1: Switch wallet to the correct chain
       toast.loading(`Switching to ${chainInfo.name}...`);
-      const hexChainId = ethers.toBeHex(numericChainId);
+
+      let client = await getWalletClient();
 
       try {
-        await window.ethereum!.request!({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: hexChainId }],
-        } as any);
+        await switchChain(client!, { id: numericChainId });
       } catch (switchError: any) {
-        // Chain not added, try to add it
-        if (switchError.code === 4902) {
-          await window.ethereum!.request!({
-            method: "wallet_addEthereumChain",
-            params: [
-              {
-                chainId: hexChainId,
-                chainName: chainInfo.name,
-                rpcUrls: [chainInfo.rpc],
-                nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-              },
-            ],
-          } as any);
-        } else {
-          throw switchError;
-        }
+        console.error("Switch chain error:", switchError);
+        throw switchError;
       }
 
-      // Step 2: Get fresh signer after chain switch
-      const provider = new ethers.BrowserProvider(
-        window.ethereum as any as Eip1193Provider,
-      );
-      const freshSigner = await provider.getSigner();
+      client = await getWalletClient();
 
       const distributorAddress =
         DISTRIBUTOR_ADDRESSES[
@@ -377,64 +368,30 @@ const DistributeProfitModal = ({
         throw new Error("Distributor address not found for this chain");
       }
 
+      const distributorContract = getDistributorForWrite(
+        distributorAddress as Address,
+        client!,
+      );
+
       const usdcAddress = getUsdcAddressByChainId(numericChainId);
       if (!usdcAddress) {
         throw new Error("USDC address not found for this chain");
       }
 
       // Step 3: Create contract instances with fresh signer
-      const distributor = new Contract(
-        distributorAddress,
-        minestartersDistributor,
-        freshSigner,
-      );
-
       const recipients = chainBreakdownItem.holders.map((h) => h.account);
       const amounts = chainBreakdownItem.holders.map((h) =>
         ethers.parseUnits(h.profitShare, 0),
       );
 
-      // Step 4: Approve USDC
-      const usdcAbi = [
-        {
-          inputs: [
-            { internalType: "address", name: "spender", type: "address" },
-            { internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          name: "approve",
-          outputs: [{ internalType: "bool", name: "", type: "bool" }],
-          stateMutability: "nonpayable",
-          type: "function",
-        },
-        {
-          inputs: [
-            { internalType: "address", name: "account", type: "address" },
-          ],
-          name: "balanceOf",
-          outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-          stateMutability: "view",
-          type: "function",
-        },
-        {
-          inputs: [
-            { internalType: "address", name: "owner", type: "address" },
-            { internalType: "address", name: "spender", type: "address" },
-          ],
-          name: "allowance",
-          outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-          stateMutability: "view",
-          type: "function",
-        },
-      ];
-
-      const usdc = new Contract(usdcAddress, usdcAbi, freshSigner);
-      const userAddress = await freshSigner.getAddress();
+      const usdc = getUsdcReadByAddress(usdcAddress as Address, client!);
+      const userAddress = client?.account.address;
 
       const totalAmount = amounts.reduce((sum, a) => sum + a, 0n);
 
       // Check current balance
       toast.loading("Checking USDC balance...");
-      const balance = await usdc.balanceOf(userAddress);
+      const balance = await usdc.read.balanceOf([userAddress as Address]);
 
       if (balance < totalAmount) {
         throw new Error(
@@ -446,17 +403,22 @@ const DistributeProfitModal = ({
       }
 
       // Check current allowance
-      const currentAllowance = await usdc.allowance(
-        userAddress,
-        distributorAddress,
-      );
+      const currentAllowance = await usdc.read.allowance([
+        userAddress as Address,
+        distributorAddress as Address,
+      ]);
 
       if (currentAllowance < totalAmount) {
         toast.loading("Approving USDC...");
-        // Approve with some extra buffer
-        const approveAmount = totalAmount + ethers.parseUnits("1", 6);
-        const approveTx = await usdc.approve(distributorAddress, approveAmount);
-        const approveReceipt = await approveTx.wait();
+        // Approve max uint256 for unlimited approval
+        const approveAmount = ethers.MaxUint256;
+        const approveTx = await usdc.write.approve([
+          distributorAddress as Address,
+          approveAmount,
+        ]);
+        const approveReceipt = await waitForTransactionReceipt(client!, {
+          hash: approveTx,
+        });
 
         if (!approveReceipt) {
           throw new Error("USDC approval failed - no receipt");
@@ -465,12 +427,13 @@ const DistributeProfitModal = ({
 
       // Step 5: Execute batch payout with correct USDC address
       toast.loading("Executing batch payout...");
-      const tx = await distributor.batchPayout(
+      const tx = await distributorContract.write.batchPayout([
         usdcAddress,
         recipients,
         amounts,
-      );
-      const receipt = await tx.wait();
+      ]);
+
+      const receipt = await waitForTransactionReceipt(client!, { hash: tx });
 
       if (receipt) {
         toast.success(`Payout completed for ${chainBreakdownItem.chainName}`);

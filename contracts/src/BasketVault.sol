@@ -46,6 +46,7 @@ contract BasketVault is ReentrancyGuard {
     uint256 public withdrawnPrincipal;
 
     IERC20 public immutable USDC;
+    address public immutable factory;
 
     uint256 private constant BPS_DENOMINATOR = 10_000;
 
@@ -59,6 +60,7 @@ contract BasketVault is ReentrancyGuard {
         string[] memory _companyNames,
         uint256[] memory _companyWeights,
         address usdcToken,
+        address _factory,
         address _creator,
         address _withdrawAddress,
         uint256 _minimumRaise,
@@ -87,6 +89,7 @@ contract BasketVault is ReentrancyGuard {
         deadline = _deadline;
         raiseFeeBps = _raiseFeeBps;
         USDC = IERC20(usdcToken);
+        factory = _factory;
 
         string memory tokenName = string.concat(projectName, " Share");
         shareToken = address(new BasketShareToken(tokenName, "MNS", address(this)));
@@ -108,6 +111,73 @@ contract BasketVault is ReentrancyGuard {
         BasketShareToken(shareToken).mint(msg.sender, netAmount);
 
         emit Deposited(msg.sender, amount, netAmount, sourceChainId);
+
+        _finalizeIfNeeded();
+    }
+
+    /**
+     * @notice Deposits USDC on behalf of a specific user.
+     * @param user The address that will receive the minted shares.
+     * @param amount The total USDC amount to deposit.
+     * @param sourceChainId The ID of the chain where the funds originated.
+     */
+    function depositFor(
+        address user, 
+        uint256 amount, 
+        uint256 sourceChainId
+    ) external nonReentrant {
+        require(!_fundraiseFailed(), "Fundraise closed");
+        require(amount > 0, "Amount required");
+        require(user != address(0), "Invalid user address");
+
+        uint256 fee = (amount * raiseFeeBps) / BPS_DENOMINATOR;
+        uint256 netAmount = amount - fee;
+        require(netAmount > 0, "Net zero");
+
+        totalRaised += amount;
+        accruedRaiseFees += fee;
+
+        // STRATEGY: 
+        // Pull USDC from 'user'. 
+        // For this to work in Multicall, the 'user' must have 
+        // already approved THIS contract (not the Multicall contract).
+        bool success = USDC.transferFrom(user, address(this), amount);
+        require(success, "Transfer failed");
+
+        // Mint shares to the 'user' instead of msg.sender
+        BasketShareToken(shareToken).mint(user, netAmount);
+
+        emit Deposited(user, amount, netAmount, sourceChainId);
+
+        _finalizeIfNeeded();
+    }
+
+    /**
+     * @notice Deposits USDC on behalf of a user when the factory has already pulled funds.
+     * @param user The address that will receive the minted shares.
+     * @param amount The total USDC amount deposited.
+     * @param sourceChainId The ID of the chain where the funds originated.
+     */
+    function depositForFromFactory(
+        address user,
+        uint256 amount,
+        uint256 sourceChainId
+    ) external nonReentrant {
+        require(msg.sender == factory, "Only factory");
+        require(!_fundraiseFailed(), "Fundraise closed");
+        require(amount > 0, "Amount required");
+        require(user != address(0), "Invalid user address");
+
+        uint256 fee = (amount * raiseFeeBps) / BPS_DENOMINATOR;
+        uint256 netAmount = amount - fee;
+        require(netAmount > 0, "Net zero");
+
+        totalRaised += amount;
+        accruedRaiseFees += fee;
+
+        BasketShareToken(shareToken).mint(user, netAmount);
+
+        emit Deposited(user, amount, netAmount, sourceChainId);
 
         _finalizeIfNeeded();
     }

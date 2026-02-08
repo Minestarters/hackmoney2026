@@ -6,9 +6,9 @@ dataSources:
     name: MinestartersFactory
     network: arc-testnet
     source:
-      address: "0xeE0e981d40Ad67FD649f867CbAa3248a39ac53eb"
+      address: "0xce6d296E298f43860710F098B6Dd495E320094F7"
       abi: MinestartersFactory
-      startBlock: 25602756
+      startBlock: 25854689
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -26,9 +26,9 @@ dataSources:
     name: NAVEngine
     network: arc-testnet
     source:
-      address: "0xBF1ec4267A5c13ed64239d414125d8583f0E0BC1"
+      address: "0xc932B7898280A25CA9DB5b2B638D4aBf70CB7ecF"
       abi: NAVEngine
-      startBlock: 25602756
+      startBlock: 25854689
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -101,4 +101,3 @@ templates:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleTransfer
-

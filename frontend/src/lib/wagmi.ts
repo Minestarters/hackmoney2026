@@ -1,55 +1,48 @@
 import { http, createConfig } from "wagmi";
-import { localhost, arcTestnet } from "wagmi/chains";
+import { arcTestnet } from "wagmi/chains";
 import { injected } from "wagmi/connectors";
 import { createPublicClient, createWalletClient, custom, defineChain } from "viem";
 import type { Account, Chain, Transport, WalletClient } from "viem";
 import { RPC_URL } from "../config";
-
-// Check if we're using localhost
-const isLocalhost =
-  RPC_URL.includes("localhost") || RPC_URL.includes("127.0.0.1");
+import { BRIDGEKIT_SUPPORTED_TESTNETS, type ChainInfo } from "./bridgeChains";
 
 // Export the primary chain
-export const chain = isLocalhost ? localhost : arcTestnet;
+export const chain = arcTestnet;
+export const DEFAULT_CHAIN_ID = arcTestnet.id;
 
-// Wagmi config
-export const wagmiConfig = createConfig({
-  chains: [arcTestnet, localhost],
-  connectors: [injected()],
-  transports: {
-    [arcTestnet.id]: http(isLocalhost ? undefined : RPC_URL),
-    [localhost.id]: http(isLocalhost ? RPC_URL : undefined),
+const getTransports = () => {
+  return BRIDGEKIT_SUPPORTED_TESTNETS.map((chain) => ({
+    [chain.chainId]: http(chain.rpcEndpoints[0]),
+  })).reduce((acc, transport) => ({ ...acc, ...transport }), {});
+}
+
+const chains = BRIDGEKIT_SUPPORTED_TESTNETS.map((chain: ChainInfo) => defineChain({
+  id: chain.chainId,
+  name: chain.name,
+  nativeCurrency: { name: "Native", symbol: "NATIVE", decimals: 18 },
+  rpcUrls: {
+    default: { http: [chain.rpcEndpoints[0]] },
+    ...Object.keys(chain.rpcEndpoints).reduce((acc, key) => {
+      acc[key] = { http: [chain.rpcEndpoints[key as any]] };
+      return acc;
+    }, {} as Record<string, { http: string[] }>)
   },
+  blockExplorers: {
+    default: { name: `${chain.name} Explorer`, url: chain.explorerUrl },
+  },
+}))
+
+export const wagmiConfig = createConfig({
+  chains: chains as any,
+  multiInjectedProviderDiscovery: true,
+  connectors: [injected()],
+  transports: getTransports(),
 });
 
 // Public client for read-only operations (no wallet needed)
 export const publicClient = createPublicClient({
   transport: http(RPC_URL),
 });
-
-let cachedRpcChain: Chain | null = null;
-export const getRpcChain = async (): Promise<Chain> => {
-  if (cachedRpcChain) return cachedRpcChain;
-  const chainId = await publicClient.getChainId();
-  if (chainId === localhost.id) {
-    cachedRpcChain = localhost;
-    return cachedRpcChain;
-  }
-  if (chainId === arcTestnet.id) {
-    cachedRpcChain = arcTestnet;
-    return cachedRpcChain;
-  }
-  cachedRpcChain = defineChain({
-    id: chainId,
-    name: `Chain ${chainId}`,
-    nativeCurrency: { name: "Native", symbol: "NATIVE", decimals: 18 },
-    rpcUrls: {
-      default: { http: [RPC_URL] },
-      public: { http: [RPC_URL] },
-    },
-  });
-  return cachedRpcChain;
-};
 
 // Type for wallet client with account (required for writes)
 export type WalletClientWithAccount = WalletClient<Transport, Chain, Account>;
@@ -66,8 +59,14 @@ export const getWalletClient = async (): Promise<WalletClientWithAccount | null>
     const address = accounts?.[0];
     if (!address) return null;
 
+    const connectedChain = await window.ethereum.request({
+      method: "eth_chainId",
+    }) as string;
 
-    const rpcChain = await getRpcChain();
+    const chainId = parseInt(connectedChain, 16);
+
+    const rpcChain = chains.find((c) => c.id === chainId);
+
     const client = createWalletClient({
       account: address,
       chain: rpcChain,
