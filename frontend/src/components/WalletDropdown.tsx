@@ -2,8 +2,74 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrivy, useFundWallet, useWallets } from "@privy-io/react-auth";
 import { useAccount } from "wagmi";
 import { sepolia } from "viem/chains";
+import { createPublicClient, http, formatUnits } from "viem";
 import { shortAddress } from "../lib/format";
 import { useKernelClient } from "../lib/kernelClient";
+import { USDC_ADDRESS, RPC_URL } from "../config";
+
+
+const USDC_DECIMALS = 6;
+
+const ERC20_BALANCE_ABI = [
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+const publicClient = createPublicClient({
+  chain: sepolia,
+  transport: http(RPC_URL),
+});
+
+
+function useCopyText() {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, []);
+  return { copied, copy };
+}
+
+function useUsdcBalance(address: string | null) {
+  const [balance, setBalance] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetch = useCallback(async (addr: string) => {
+    if (!USDC_ADDRESS) return;
+    try {
+      const raw = await publicClient.readContract({
+        address: USDC_ADDRESS as `0x${string}`,
+        abi: ERC20_BALANCE_ABI,
+        functionName: "balanceOf",
+        args: [addr as `0x${string}`],
+      });
+      setBalance(formatUnits(raw, USDC_DECIMALS));
+    } catch {
+      setBalance(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!address) { setBalance(null); return; }
+    setLoading(true);
+    fetch(address).finally(() => setLoading(false));
+
+    // Refresh every 30s
+    const id = setInterval(() => fetch(address), 30_000);
+    return () => clearInterval(id);
+  }, [address, fetch]);
+
+  return { balance, loading };
+}
+
+// ── tiny components ───────────────────────────────────────────────────────────
 
 function CopyIcon() {
   return (
@@ -24,17 +90,6 @@ function ChevronIcon({ open }: { open: boolean }) {
       <path d="M0 2l4 4 4-4z" />
     </svg>
   );
-}
-
-function useCopyText() {
-  const [copied, setCopied] = useState(false);
-  const copy = useCallback((text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, []);
-  return { copied, copy };
 }
 
 function AddressRow({
@@ -75,6 +130,24 @@ function AddressRow({
   );
 }
 
+function UsdcBalanceRow({ address }: { address: string | null }) {
+  const { balance, loading } = useUsdcBalance(address);
+  if (!USDC_ADDRESS) return null;
+
+  return (
+    <div className="mb-3 flex items-center justify-between rounded border border-stone-700/60 bg-stone-900/40 px-2 py-1.5">
+      <div className="flex items-center gap-1.5">
+        {/* USDC circle logo */}
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 text-[7px] font-black text-white">$</span>
+        <span className="text-[8px] uppercase tracking-widest text-stone-500">USDC</span>
+      </div>
+      <span className="font-mono text-[9px] text-stone-200">
+        {loading ? "…" : balance !== null ? Number(balance).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+      </span>
+    </div>
+  );
+}
+
 
 export default function WalletDropdown() {
   const { ready, authenticated, login, logout, user } = usePrivy();
@@ -90,32 +163,20 @@ export default function WalletDropdown() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!authenticated) {
-      setKernelAddress(null);
-      return;
-    }
+    if (!authenticated) { setKernelAddress(null); return; }
     let cancelled = false;
     setKernelLoading(true);
     getKernelClient()
-      .then((client) => {
-        if (!cancelled) setKernelAddress((client.account?.address as string) ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setKernelAddress(null);
-      })
-      .finally(() => {
-        if (!cancelled) setKernelLoading(false);
-      });
+      .then((client) => { if (!cancelled) setKernelAddress((client.account?.address as string) ?? null); })
+      .catch(() => { if (!cancelled) setKernelAddress(null); })
+      .finally(() => { if (!cancelled) setKernelLoading(false); });
     return () => { cancelled = true; };
   }, [authenticated, wallets, getKernelClient]);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -123,11 +184,9 @@ export default function WalletDropdown() {
 
   const buttonLabel = useMemo(
     () =>
-      kernelLoading
-        ? "Loading…"
-        : (kernelAddress ?? eoaAddress)
-        ? shortAddress((kernelAddress ?? eoaAddress)!)
-        : "Wallet",
+      kernelLoading ? "Loading…"
+      : (kernelAddress ?? eoaAddress) ? shortAddress((kernelAddress ?? eoaAddress)!)
+      : "Wallet",
     [kernelLoading, kernelAddress, eoaAddress],
   );
 
@@ -149,15 +208,10 @@ export default function WalletDropdown() {
     const target = kernelAddress ?? eoaAddress;
     if (!target) return;
     setOpen(false);
-    await fundWallet({
-      address: target as `0x${string}`,
-      options: { chain: sepolia },
-    });
+    await fundWallet({ address: target as `0x${string}`, options: { chain: sepolia } });
   }, [kernelAddress, eoaAddress, fundWallet]);
 
-  if (!ready) {
-    return <div className="h-8 w-24 animate-pulse rounded bg-stone-800" />;
-  }
+  if (!ready) return <div className="h-8 w-24 animate-pulse rounded bg-stone-800" />;
 
   if (!authenticated) {
     return (
@@ -198,16 +252,14 @@ export default function WalletDropdown() {
             <p className="mb-3 truncate text-[9px] text-stone-400">✉ {userEmail}</p>
           )}
 
-          <AddressRow
-            label="Smart Account"
-            address={kernelAddress}
-            loading={kernelLoading}
-            accent
-          />
+          <AddressRow label="Smart Account" address={kernelAddress} loading={kernelLoading} accent />
 
           {isLinkedExternalWallet && eoaAddress && (
             <AddressRow label="Signer (EOA)" address={eoaAddress} />
           )}
+
+          {/* USDC balance — reads from kernel smart account */}
+          <UsdcBalanceRow address={kernelAddress} />
 
           <div className="space-y-2 border-t border-stone-800 pt-3">
             <button
