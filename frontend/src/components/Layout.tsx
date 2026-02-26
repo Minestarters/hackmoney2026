@@ -1,7 +1,17 @@
 import type { PropsWithChildren } from "react";
 import { Link, NavLink } from "react-router-dom";
-import WalletMenu from "./WalletMenu";
+import { UserPill } from "@privy-io/react-auth/ui";
+import { usePrivy } from "@privy-io/react-auth";
+import { useAccount } from "wagmi";
+import { shortAddress } from "../lib/format";
 import MintButton from "./MintButton";
+
+function WalletPill() {
+  const { authenticated } = usePrivy();
+  const { address } = useAccount();
+  const label = authenticated && address ? shortAddress(address) : undefined;
+  return <UserPill label={label} />;
+}
 
 const Layout = ({ children }: PropsWithChildren) => (
   <div className="min-h-screen text-stone-100">
@@ -22,7 +32,9 @@ const Layout = ({ children }: PropsWithChildren) => (
           <NavLink
             to="/"
             className={({ isActive }) =>
-              `uppercase tracking-wider ${isActive ? "text-grass" : "text-stone-300"}`
+              `uppercase tracking-wider ${
+                isActive ? "text-grass" : "text-stone-300"
+              }`
             }
           >
             Home
@@ -30,7 +42,9 @@ const Layout = ({ children }: PropsWithChildren) => (
           <NavLink
             to="/create"
             className={({ isActive }) =>
-              `uppercase tracking-wider ${isActive ? "text-grass" : "text-stone-300"}`
+              `uppercase tracking-wider ${
+                isActive ? "text-grass" : "text-stone-300"
+              }`
             }
           >
             Create Project
@@ -38,13 +52,15 @@ const Layout = ({ children }: PropsWithChildren) => (
           <NavLink
             to="/calculator"
             className={({ isActive }) =>
-              `uppercase tracking-wider ${isActive ? "text-grass" : "text-stone-300"}`
+              `uppercase tracking-wider ${
+                isActive ? "text-grass" : "text-stone-300"
+              }`
             }
           >
             Calculator
           </NavLink>
           <MintButton />
-          <WalletMenu />
+          <WalletPill />
         </nav>
       </div>
     </header>

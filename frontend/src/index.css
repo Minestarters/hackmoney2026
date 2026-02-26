@@ -54,3 +54,11 @@ body {
   color: #f3f4f6;
   box-shadow: inset 0 0 0 2px #3b3f46;
 }
+
+[data-floating-ui-portal] span,
+[data-floating-ui-portal] p {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

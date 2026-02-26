@@ -17,7 +17,7 @@ import type { ProjectInfo, CompanyDetails, CompanyDocument } from "../types";
 import { DocumentManager } from "../components/DocumentManager";
 import { useCompanyDocuments } from "../hooks/useCompanyDocuments";
 import type { Address } from "viem";
-import { useConnection } from "wagmi";
+import { useAccount } from "wagmi";
 import { Gem, Pickaxe, ScrollText, Telescope } from "lucide-react";
 
 const COMPANY_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
@@ -47,7 +47,7 @@ export const CompanyDetailsPage = () => {
     sanitizeExplorerUrl(getExplorerUrl()),
   );
 
-  const { isConnected, chainId } = useConnection();
+  const { isConnected, chainId } = useAccount();
 
   const companyIndex = companyIndexStr ? parseInt(companyIndexStr, 10) : -1;
 

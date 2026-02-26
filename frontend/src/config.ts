@@ -3,7 +3,8 @@ export const USDC_ADDRESS = import.meta.env.VITE_USDC_ADDRESS || "";
 export const NAV_ENGINE_ADDRESS = import.meta.env.VITE_NAV_ENGINE_ADDRESS || "";
 export const RPC_URL = import.meta.env.VITE_RPC_URL || "http://localhost:8545";
 export const EXPLORER_URL = import.meta.env.VITE_EXPLORER_URL || "";
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 export const IPFS_GATEWAY_URL = import.meta.env.VITE_IPFS_GATEWAY_URL;
 
 export const SUBGRAPH_URL = import.meta.env.VITE_SUBGRAPH_URL || "";
@@ -18,7 +19,8 @@ export const YELLOW_APPLICATION = "minestarters-curators";
 export const YELLOW_SCOPE =
   import.meta.env.VITE_YELLOW_SCOPE || "transfer,app.create";
 export const YELLOW_SESSION_EXPIRES_MS = Number(
-  import.meta.env.VITE_YELLOW_SESSION_EXPIRES_MS || `${7 * 24 * 60 * 60 * 1000}`
+  import.meta.env.VITE_YELLOW_SESSION_EXPIRES_MS ||
+    `${7 * 24 * 60 * 60 * 1000}`,
 );
 export const SESSION_API_URL =
   import.meta.env.VITE_SESSION_API_URL || "https://hackmoney2026.onrender.com";
@@ -26,6 +28,8 @@ export const YELLOW_WALLET_1_SEED_PHRASE =
   import.meta.env.VITE_WALLET_1_SEED_PHRASE || "";
 export const YELLOW_WALLET_2_SEED_PHRASE =
   import.meta.env.VITE_WALLET_2_SEED_PHRASE || "";
+
+export const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID || "";
 
 const DEFAULT_CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",

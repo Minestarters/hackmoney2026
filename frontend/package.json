@@ -15,6 +15,8 @@
     "@circle-fin/bridge-kit": "^1.5.0",
     "@erc7824/nitrolite": "^0.5.3",
     "@fontsource/press-start-2p": "^5.2.7",
+    "@privy-io/react-auth": "^3.14.1",
+    "@privy-io/wagmi": "^4.0.2",
     "@tanstack/react-query": "^5.90.20",
     "ethers": "^6.16.0",
     "graphql": "^16.12.0",
