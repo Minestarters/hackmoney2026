@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePrivy, useFundWallet, useWallets } from "@privy-io/react-auth";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
 import { sepolia } from "viem/chains";
-import { createPublicClient, http, formatUnits } from "viem";
+import { formatUnits } from "viem";
 import { shortAddress } from "../lib/format";
 import { useKernelClient } from "../lib/kernelClient";
-import { USDC_ADDRESS, RPC_URL } from "../config";
+import { USDC_ADDRESS } from "../config";
 
 
 const USDC_DECIMALS = 6;
@@ -20,12 +20,6 @@ const ERC20_BALANCE_ABI = [
   },
 ] as const;
 
-const publicClient = createPublicClient({
-  chain: sepolia,
-  transport: http(RPC_URL),
-});
-
-
 function useCopyText() {
   const [copied, setCopied] = useState(false);
   const copy = useCallback((text: string) => {
@@ -38,38 +32,24 @@ function useCopyText() {
 }
 
 function useUsdcBalance(address: string | null) {
-  const [balance, setBalance] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { data, isLoading } = useReadContract({
+    address: USDC_ADDRESS as `0x${string}`,
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: [address as `0x${string}`],
+    query: {
+      enabled: !!address && !!USDC_ADDRESS,
+      staleTime: 15_000,
+      refetchInterval: 30_000,
+      refetchIntervalInBackground: false,
+    },
+  });
 
-  const fetch = useCallback(async (addr: string) => {
-    if (!USDC_ADDRESS) return;
-    try {
-      const raw = await publicClient.readContract({
-        address: USDC_ADDRESS as `0x${string}`,
-        abi: ERC20_BALANCE_ABI,
-        functionName: "balanceOf",
-        args: [addr as `0x${string}`],
-      });
-      setBalance(formatUnits(raw, USDC_DECIMALS));
-    } catch {
-      setBalance(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!address) { setBalance(null); return; }
-    setLoading(true);
-    fetch(address).finally(() => setLoading(false));
-
-    // Refresh every 30s
-    const id = setInterval(() => fetch(address), 30_000);
-    return () => clearInterval(id);
-  }, [address, fetch]);
-
-  return { balance, loading };
+  return {
+    balance: data != null ? formatUnits(data, USDC_DECIMALS) : null,
+    loading: isLoading,
+  };
 }
-
-// ── tiny components ───────────────────────────────────────────────────────────
 
 function CopyIcon() {
   return (
