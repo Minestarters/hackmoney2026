@@ -36,12 +36,10 @@ function useUsdcBalance(address: string | null) {
     address: USDC_ADDRESS as `0x${string}`,
     abi: ERC20_BALANCE_ABI,
     functionName: "balanceOf",
-    args: [address as `0x${string}`],
+    args: address ? [address as `0x${string}`] : undefined,
     query: {
       enabled: !!address && !!USDC_ADDRESS,
-      staleTime: 15_000,
-      refetchInterval: 30_000,
-      refetchIntervalInBackground: false,
+      staleTime: 15_000, 
     },
   });
 
