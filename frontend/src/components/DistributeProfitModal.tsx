@@ -19,7 +19,7 @@ import {
   getChainNameAndRPC,
 } from "../lib/bridgeChains";
 import { switchChain, waitForTransactionReceipt } from "viem/actions";
-import { DEFAULT_CHAIN_ID, getWalletClient } from "../lib/wagmi";
+import { DEFAULT_CHAIN_ID, getEoaWalletClient } from "../lib/wagmi";
 import { getDistributorForWrite, getUsdcReadByAddress } from "../lib/contracts";
 import type { Address } from "viem";
 
@@ -246,7 +246,7 @@ const DistributeProfitModal = ({
 
           const amountStr = ethers.formatUnits(chain.totalAmount, 6);
 
-          const client = await getWalletClient();
+          const client = await getEoaWalletClient();
 
           await switchChain(client!, { id: DEFAULT_CHAIN_ID }); // Switch to Arc Testnet for bridging
 
@@ -349,7 +349,7 @@ const DistributeProfitModal = ({
       // Step 1: Switch wallet to the correct chain
       toast.loading(`Switching to ${chainInfo.name}...`);
 
-      let client = await getWalletClient();
+      let client = await getEoaWalletClient();
 
       try {
         await switchChain(client!, { id: numericChainId });
@@ -358,7 +358,7 @@ const DistributeProfitModal = ({
         throw switchError;
       }
 
-      client = await getWalletClient();
+      client = await getEoaWalletClient();
 
       const distributorAddress =
         DISTRIBUTOR_ADDRESSES[

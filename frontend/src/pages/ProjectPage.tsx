@@ -24,7 +24,8 @@ import {
   getUsdcRead,
 } from "../lib/contracts";
 import { formatBpsAsPercent, formatUsdc, shortAddress } from "../lib/format";
-import { publicClient, getWalletClient } from "../lib/wagmi";
+import { publicClient } from "../lib/wagmi";
+import { useKernelClient } from "../lib/kernelClient";
 import type { ProjectInfo, UserPosition } from "../types";
 import { minestartersFactoryAbi } from "../contracts/abis";
 
@@ -213,6 +214,7 @@ const ProjectPage = () => {
   const { address } = useParams<{ address: string }>();
   const { address: account, isConnected } = useAccount();
   const { connect } = useConnect();
+  const { getKernelClient } = useKernelClient();
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [position, setPosition] = useState<UserPosition | null>(null);
   const [supportCount, setSupportCount] = useState<number | null>(null);
@@ -359,11 +361,7 @@ const ProjectPage = () => {
       toast.error("Set VITE_FACTORY_ADDRESS for deposits");
       return;
     }
-    const walletClient = await getWalletClient();
-    if (!walletClient) {
-      toast.error("Could not get wallet");
-      return;
-    }
+    const walletClient: any = await getKernelClient();
 
     const value = parseUnits(amountStr || "0", 6);
     const usdcRead = getUsdcRead();
@@ -430,11 +428,7 @@ const ProjectPage = () => {
       connect({ connector: injected() });
       return;
     }
-    const walletClient = await getWalletClient();
-    if (!walletClient) {
-      toast.error("Could not get wallet");
-      return;
-    }
+    const walletClient: any = await getKernelClient();
     try {
       await toast.promise(
         (async () => {
@@ -473,11 +467,7 @@ const ProjectPage = () => {
       connect({ connector: injected() });
       return;
     }
-    const walletClient = await getWalletClient();
-    if (!walletClient) {
-      toast.error("Could not get wallet");
-      return;
-    }
+    const walletClient: any = await getKernelClient();
     await toast.promise(
       (async () => {
         const hash = await writeVault.withdrawRaisedFunds(

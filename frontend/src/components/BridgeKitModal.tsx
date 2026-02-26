@@ -42,7 +42,7 @@ import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { USDC_ADDRESS, ARC_TESTNET_CHAIN_ID } from "../config";
 import type { ProjectInfo } from "../types";
-import { DEFAULT_CHAIN_ID, getWalletClient } from "../lib/wagmi";
+import { DEFAULT_CHAIN_ID, getEoaWalletClient } from "../lib/wagmi";
 import {
   getMulticall3ForWrite,
   getTokenMessengerForWrite,
@@ -250,7 +250,7 @@ const BridgeKitModal = ({
         return;
       }
 
-      let client = await getWalletClient();
+      let client = await getEoaWalletClient();
 
       try {
         console.log("Switching to ", chain.chainId, " for bridging");
@@ -258,7 +258,7 @@ const BridgeKitModal = ({
 
         console.log("Switched to ", chain.name, " for bridging");
 
-        client = await getWalletClient();
+        client = await getEoaWalletClient();
 
         const usdcContract = getUsdcReadByAddress(usdcAddress, client!);
 
@@ -324,7 +324,7 @@ const BridgeKitModal = ({
 
         await switchChain(client as any, { id: DEFAULT_CHAIN_ID });
 
-        client = await getWalletClient();
+        client = await getEoaWalletClient();
 
         if (showAmount && multiCallSteps.length > 0) {
           // Check USDC Approval

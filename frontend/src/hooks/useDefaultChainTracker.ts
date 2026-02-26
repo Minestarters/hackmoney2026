@@ -1,24 +1,22 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useConnection } from "wagmi";
-import { chain, getWalletClient } from "../lib/wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
+import { chain } from "../lib/wagmi";
 
 export const useDefaultChainTracker = () => {
-  const { isConnected, chainId } = useConnection();
+  const { isConnected, chainId } = useAccount();
+  const { switchChain } = useSwitchChain();
 
   const hasSwitched = useRef(false);
 
-  const checkAndSwitch = useCallback(async () => {
-    if (hasSwitched.current) return; // Prevent multiple attempts
+  const checkAndSwitch = useCallback(() => {
+    if (hasSwitched.current) return;
     try {
-      console.log("Attempting to switch to default chain", { targetChainId: chain.id });
-      const client = await getWalletClient();
-      client?.switchChain({ id: chain.id });
+      switchChain({ chainId: chain.id });
       hasSwitched.current = true;
-      console.log("Successfully switched to default chain");
     } catch (error) {
       console.error("Failed to switch to default chain", error);
     }
-  }, []);
+  }, [switchChain]);
 
   useEffect(() => {
     if (isConnected && !hasSwitched.current && chainId !== chain.id) {

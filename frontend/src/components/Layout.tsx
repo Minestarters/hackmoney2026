@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from "react";
 import { Link, NavLink } from "react-router-dom";
-import WalletMenu from "./WalletMenu";
 import MintButton from "./MintButton";
+import WalletDropdown from "./WalletDropdown";
 
 const Layout = ({ children }: PropsWithChildren) => (
   <div className="min-h-screen text-stone-100">
@@ -22,7 +22,9 @@ const Layout = ({ children }: PropsWithChildren) => (
           <NavLink
             to="/"
             className={({ isActive }) =>
-              `uppercase tracking-wider ${isActive ? "text-grass" : "text-stone-300"}`
+              `uppercase tracking-wider ${
+                isActive ? "text-grass" : "text-stone-300"
+              }`
             }
           >
             Home
@@ -30,7 +32,9 @@ const Layout = ({ children }: PropsWithChildren) => (
           <NavLink
             to="/create"
             className={({ isActive }) =>
-              `uppercase tracking-wider ${isActive ? "text-grass" : "text-stone-300"}`
+              `uppercase tracking-wider ${
+                isActive ? "text-grass" : "text-stone-300"
+              }`
             }
           >
             Create Project
@@ -38,13 +42,15 @@ const Layout = ({ children }: PropsWithChildren) => (
           <NavLink
             to="/calculator"
             className={({ isActive }) =>
-              `uppercase tracking-wider ${isActive ? "text-grass" : "text-stone-300"}`
+              `uppercase tracking-wider ${
+                isActive ? "text-grass" : "text-stone-300"
+              }`
             }
           >
             Calculator
           </NavLink>
           <MintButton />
-          <WalletMenu />
+          <WalletDropdown />
         </nav>
       </div>
     </header>

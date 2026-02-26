@@ -10,7 +10,7 @@ import {
   tokenMessengerAbi,
 } from "../contracts/abis";
 import type { ProjectInfo, UserPosition, CompanyDetails } from "../types";
-import { getWalletClient, publicClient, type WalletClientWithAccount } from "./wagmi";
+import { publicClient, type WalletClientWithAccount } from "./wagmi";
 import { getProjectsList, getProjectSupporterCount } from "./subgraph";
 
 // Read-only contract getters (use publicClient)
@@ -518,11 +518,8 @@ export const advanceCompanyStage = async (
   companyIndex: number,
   yearsToProduction: number,
   remainingMineLife: number,
+  walletClient: WalletClientWithAccount,
 ): Promise<string | undefined> => {
-  const walletClient = await getWalletClient();
-
-  if (!walletClient) return
-
   // Call advanceCompanyStage on the NAVEngine contract
   // Use manual gas limit to avoid inflated gas estimation
   const hash = await walletClient.writeContract({
