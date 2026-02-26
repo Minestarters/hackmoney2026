@@ -33,6 +33,7 @@ createRoot(document.getElementById("root")!).render(
           ethereum: {
             createOnLogin: "users-without-wallets",
           },
+          showWalletUIs: false,
         },
       }}
     >

@@ -54,26 +54,3 @@ body {
   color: #f3f4f6;
   box-shadow: inset 0 0 0 2px #3b3f46;
 }
-
-/* Reset font inside Privy UserPill + its dropdown to match the Privy login modal */
-.privy-widget,
-.privy-widget * {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    sans-serif !important;
-  letter-spacing: normal !important;
-}
-
-[data-floating-ui-portal],
-[data-floating-ui-portal] * {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    sans-serif !important;
-  letter-spacing: normal !important;
-}
-
-[data-floating-ui-portal] span,
-[data-floating-ui-portal] p {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}

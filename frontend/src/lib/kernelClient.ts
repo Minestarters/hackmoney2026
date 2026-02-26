@@ -6,7 +6,7 @@ import {
   createZeroDevPaymasterClient,
 } from "@zerodev/sdk";
 import { KERNEL_V3_1, getEntryPoint } from "@zerodev/sdk/constants";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import toast from "react-hot-toast";
 import { http, createPublicClient } from "viem";
 import { sepolia } from "viem/chains";
@@ -21,7 +21,7 @@ const kernelVersion = KERNEL_V3_1;
 export function useKernelClient() {
   const { wallets } = useWallets();
 
-  const getKernelClient = async () => {
+  const getKernelClient = useCallback(async () => {
     const embeddedWallet =
       wallets.find((w) => w.walletClientType === "privy") ??
       wallets.find((w) => w.connectorType === "embedded");
@@ -78,7 +78,7 @@ export function useKernelClient() {
     });
 
     return kernelClient;
-  };
+  }, [wallets]);
 
   return { getKernelClient };
 }
@@ -132,7 +132,12 @@ export function useDeployKernelAccount() {
         if (cancelled) return;
         toastId = toast.loading("Setting up your wallet…");
 
-        await client.sendTransaction({ to: address, value: 0n, data: "0x" });
+        await client.sendTransaction({
+          to: address,
+          value: 0n,
+          data: "0x",
+          chain: undefined,
+        });
 
         toast.success("Wallet ready!", { id: toastId });
       } catch (err) {

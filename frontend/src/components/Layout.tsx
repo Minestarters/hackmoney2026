@@ -1,24 +1,7 @@
 import type { PropsWithChildren } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { UserPill } from "@privy-io/react-auth/ui";
-import { usePrivy } from "@privy-io/react-auth";
-import { useAccount } from "wagmi";
-import { shortAddress } from "../lib/format";
 import MintButton from "./MintButton";
-import { useDeployKernelAccount } from "../lib/kernelClient";
-
-function WalletPill() {
-  const { authenticated } = usePrivy();
-  const { address } = useAccount();
-  const label = authenticated && address ? shortAddress(address) : undefined;
-  //  pre deploy the Kernel smart account after login silently
-  useDeployKernelAccount();
-  return (
-    <div className="privy-widget">
-      <UserPill label={label} />
-    </div>
-  );
-}
+import WalletDropdown from "./WalletDropdown";
 
 const Layout = ({ children }: PropsWithChildren) => (
   <div className="min-h-screen text-stone-100">
@@ -67,7 +50,7 @@ const Layout = ({ children }: PropsWithChildren) => (
             Calculator
           </NavLink>
           <MintButton />
-          <WalletPill />
+          <WalletDropdown />
         </nav>
       </div>
     </header>
