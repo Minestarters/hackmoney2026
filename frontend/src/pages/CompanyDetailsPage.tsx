@@ -19,6 +19,7 @@ import { useCompanyDocuments } from "../hooks/useCompanyDocuments";
 import type { Address } from "viem";
 import { useAccount } from "wagmi";
 import { Gem, Pickaxe, ScrollText, Telescope } from "lucide-react";
+import { useKernelClient } from "../lib/kernelClient";
 
 const COMPANY_COLORS = ["#5EBD3E", "#6ECFF6", "#836953", "#9E9E9E", "#E3A008"];
 
@@ -48,6 +49,7 @@ export const CompanyDetailsPage = () => {
   );
 
   const { isConnected, chainId } = useAccount();
+  const { getKernelClient } = useKernelClient();
 
   const companyIndex = companyIndexStr ? parseInt(companyIndexStr, 10) : -1;
 
@@ -248,12 +250,13 @@ export const CompanyDetailsPage = () => {
       toast.loading("Advancing company stage on-chain...");
 
       // Step 3: Call advanceCompanyStage
+      const kernelClient = await getKernelClient();
       const result = await advanceCompanyStage(
         address,
         companyIndex,
         yearsToProduction,
         remainingMineLife,
-        // ipfsHashes,
+        kernelClient as any,
       );
 
       if (result) {

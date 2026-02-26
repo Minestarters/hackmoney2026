@@ -37,7 +37,7 @@ createRoot(document.getElementById("root")!).render(
       }}
     >
       <QueryClientProvider client={queryClient}>
-        <WagmiProvider config={wagmiConfig}>
+        <WagmiProvider config={wagmiConfig as any}>
           <BrowserRouter>
             <App />
             <Toaster

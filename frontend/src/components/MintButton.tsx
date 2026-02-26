@@ -3,13 +3,15 @@ import { parseUnits } from "viem";
 import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { USDC_ADDRESS } from "../config";
-import { getWalletClient, publicClient } from "../lib/wagmi";
+import { publicClient } from "../lib/wagmi";
+import { useKernelClient } from "../lib/kernelClient";
 import { writeUsdc } from "../lib/contracts";
 import { requestFaucetTokens } from "../lib/yellowFaucet";
 
 const MintButton = () => {
   const { isConnected, address } = useAccount();
   const { connect, isPending } = useConnect();
+  const { getKernelClient } = useKernelClient();
   const [minting, setMinting] = useState(false);
   const [faucetStatus, setFaucetStatus] = useState<string | null>(null);
 
@@ -27,11 +29,7 @@ const MintButton = () => {
       return;
     }
 
-    const walletClient = await getWalletClient();
-    if (!walletClient) {
-      alert("Could not get wallet client");
-      return;
-    }
+    const kernelClient = await getKernelClient();
 
     try {
       setMinting(true);
@@ -39,7 +37,7 @@ const MintButton = () => {
 
       // Mint USDC on-chain (1000 USDC)
       setFaucetStatus("Minting 1000 USDC...");
-      const hash = await writeUsdc.mint(walletClient, address, parseUnits("1000", 6));
+      const hash = await writeUsdc.mint(kernelClient as any, address, parseUnits("1000", 6));
       await publicClient.waitForTransactionReceipt({ hash });
 
       // Also request Yellow Network faucet tokens (ytest.USD)

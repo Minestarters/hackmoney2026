@@ -5,12 +5,19 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useAccount } from "wagmi";
 import { shortAddress } from "../lib/format";
 import MintButton from "./MintButton";
+import { useDeployKernelAccount } from "../lib/kernelClient";
 
 function WalletPill() {
   const { authenticated } = usePrivy();
   const { address } = useAccount();
   const label = authenticated && address ? shortAddress(address) : undefined;
-  return <UserPill label={label} />;
+  //  pre deploy the Kernel smart account after login silently
+  useDeployKernelAccount();
+  return (
+    <div className="privy-widget">
+      <UserPill label={label} />
+    </div>
+  );
 }
 
 const Layout = ({ children }: PropsWithChildren) => (

@@ -43,7 +43,7 @@ const getTransports = () => {
 
 export const wagmiConfig = createConfig({
   chains: [sepolia, ...bridgeChains] as any,
-  transports: getTransports(),
+  transports: getTransports() as any,
 });
 
 // Public client for read-only operations (no wallet needed)
@@ -52,10 +52,9 @@ export const publicClient = createPublicClient({
   transport: http(RPC_URL),
 });
 
-// replace by smart account kernel client
 export type WalletClientWithAccount = WalletClient<Transport, Chain, Account>;
 
-export const getWalletClient =
+export const getEoaWalletClient =
   async (): Promise<WalletClientWithAccount | null> => {
     if (typeof window === "undefined" || !window.ethereum?.request) return null;
     try {
@@ -68,7 +67,7 @@ export const getWalletClient =
         method: "eth_chainId",
       })) as string;
       const chainId = parseInt(chainIdHex, 16);
-      const rpcChain = bridgeChains.find((c) => c.id === chainId);
+      const rpcChain = bridgeChains.find((c) => c.id === chainId) ?? sepolia;
       const client = createWalletClient({
         account: address,
         chain: rpcChain,
@@ -80,3 +79,5 @@ export const getWalletClient =
       return null;
     }
   };
+
+export const getWalletClient = getEoaWalletClient;

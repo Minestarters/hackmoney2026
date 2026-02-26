@@ -5,7 +5,8 @@ import { useAccount, useConnect } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { FACTORY_ADDRESS } from "../config";
 import { minestartersFactoryAbi } from "../contracts/abis";
-import { getWalletClient, publicClient } from "../lib/wagmi";
+import { publicClient } from "../lib/wagmi";
+import { useKernelClient } from "../lib/kernelClient";
 import {
   createYellowSessionManager,
   type YellowSessionState,
@@ -131,6 +132,7 @@ const extractProjectAddressFromReceipt = (
 const CreateProjectPage = () => {
   const { address: account, isConnected } = useAccount();
   const { connect } = useConnect();
+  const { getKernelClient } = useKernelClient();
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [createdProjectAddress, setCreatedProjectAddress] = useState<
@@ -819,12 +821,7 @@ const CreateProjectPage = () => {
       return;
     }
 
-    const walletClient = await getWalletClient();
-    if (!walletClient) {
-      setMessage("Could not get wallet");
-      setDeploymentTriggered(false);
-      return;
-    }
+    const walletClient: any = await getKernelClient();
 
     try {
       setSubmitting(true);
@@ -923,11 +920,7 @@ const CreateProjectPage = () => {
       return;
     }
 
-    const walletClient = await getWalletClient();
-    if (!walletClient) {
-      setMessage("Could not get wallet");
-      return;
-    }
+    const walletClient: any = await getKernelClient();
 
     try {
       setSubmitting(true);
@@ -1014,11 +1007,7 @@ const CreateProjectPage = () => {
       return;
     }
 
-    const walletClient = await getWalletClient();
-    if (!walletClient) {
-      setMessage("Could not get wallet");
-      return;
-    }
+    const walletClient: any = await getKernelClient();
 
     try {
       setSubmitting(true);
